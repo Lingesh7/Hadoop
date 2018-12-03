@@ -1037,6 +1037,22 @@ root
 
 
 		GBK.map( mm => mm._2.toList.sum).take(10).foreach(println)
+		
+	#sorkByKey - takes KV pair as input and produces the output as K V pair where first arg sorted in ascending order by default.
+	
+		val products = sc.textFile("/user/hduser/retail_db/products")
+		val productsMap = products.map( mm => (mm.split(",")(1).toInt , mm))
+		val productsSortBy = productsMap.sortByKey(false) // false means descending order
+		productsSortBy.take(10).foreach(println)
+	Composite Sorting - where the key is tuple (2values)
+		val products = sc.textFile("/user/hduser/retail_db/products")
+		val productsMap = products.map( mm => ((mm.split(",")(1).toInt, -mm.split(",")(4).toFloat) , mm)) // - (minus) is to 		sort the 2 value in Key tuple will be sorted by acesnding order and decsending order (works only in Int and Float)
+		val  = productsMap.sortByKey(false) // false means descending order
+		val productsRemoveKey = productsSortBy.map(rec => rec._2)
+		productsRemoveKey.take(10).foreach(println)
+		
+	#ranking - sorting and get N number of records.
+		
 
 https://spoddutur.github.io/spark-notes/distribution_of_executors_cores_and_memory_for_spark_application.html
 https://stackoverflow.com/questions/37871194/how-to-tune-spark-executor-number-cores-and-executor-memory
