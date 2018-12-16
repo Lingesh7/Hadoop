@@ -130,8 +130,8 @@ sudo vi /usr/local/hadoop/etc/hadoop/core-site.xml (Master+Slave nodes)
 <value>hdfs://master:54310</value>
 <description>
 The name of the default file system. A URI whose scheme and authority determine the FileSystem
-implementation. The uri's scheme determines the config property fs.SCHEME.impl) naming the
-FileSystem implementation class. The uri's authority is used to determine the host, port, etc. for a
+implementation. The uris scheme determines the config property fs.SCHEME.impl) naming the
+FileSystem implementation class. The uris authority is used to determine the host, port, etc. for a
 filesystem.
 </description>
 </property>
@@ -215,6 +215,12 @@ sudo vi /usr/local/hadoop/etc/hadoop/mapred-site.xml
 <value>yarn</value>
 </property>
 </configuration>
+
+<property>
+  <name>mapreduce.jobhistory.address</name>
+  <value>192.168.1.11:10020</value>
+  <description>Host and port for Job History Server (default 0.0.0.0:10020)</description>
+</property>
 
 Run only in master
 ------------------
@@ -343,6 +349,31 @@ sqoop eval --connect jdbc:db2://base:50000/SAMPLE --username mling --password Sa
 the column used in splitby should be numeric(varchar also possible but with enabling special flag -Dorg.apache.sqoop.splitter.allow_text_filter=true), or sequence or incremented values. (high no of diif values)
 or enable --autoreset-to-one-mapper -- this helps when there is no primary key on the target table it resets the num mappers to one. 
 
+
+
+sqoop export \
+--connect jdbc:mysql://base:3306/empoffice?zeroDateTimeBehavior=CONVERT_TO_NULL \
+--username hive \
+--password hive \
+--export-dir /user/hduser/external/book_m/yr=1996/000000_0 \
+--table books \
+--lines-terminated-by '\n' \
+--fields-terminated-by '~';
+
+
+sqoop import \
+--connect jdbc:mysql://base:3306/empoffice?zeroDateTimeBehavior=CONVERT_TO_NULL \
+--username hive \
+--password hive \
+--target-dir /user/hduser/external/books_q \
+--table books \
+--lines-terminated-by '\n' \
+--fields-terminated-by '~' \
+--as-avrodatafile \
+--num-mappers 1 ;
+
+
+
 ************Errors and Solution*****************
 Command used: sqoop import --connect jdbc:mysql://base:3306/custdb?zeroDateTimeBehavior=CONVERT_TO_NULL --username hive --password hive --table credits_cst --delete-target-dir --target-dir /user/hduser/credits_cst/ -m 1
 
@@ -376,7 +407,7 @@ export HIVE_HOME=/usr/local/hive
 export PATH=$PATH:$HIVE_HOME/bin
 export CLASSPATH=$CLASSPATH:/usr/local/hadoop/lib/*:.
 export CLASSPATH=$CLASSPATH:/usr/local/hive/lib/*:.
-
+*/
 Install mysql - place mysql jdbc connector and place in /usr/local/hive/lib
 
 cd /usr/local/hive/conf
@@ -451,7 +482,7 @@ sudo vi /usr/local/hive/conf/hive-site.xml
  </property>
 <!- -->
 
-before starting the hive session - Run in mysql session
+"before starting the hive session - Run in mysql session"
 	create database metastore;
 	USE metastore;
 	SOURCE /usr/local/hive/scripts/metastore/upgrade/mysql/hive-schema-0.14.0.mysql.sql;  <<---- Creates the schema for hive metastore
@@ -464,7 +495,7 @@ before starting the hive session - Run in mysql session
 	or 
 	create database metastore; in mysql
 	USE metastore;
-	CREATE USER 'hiveuser'@'%' IDENTIFIED BY 'hivepassword';
+	CREATE USER 'hiveuser'@'ipaddress' IDENTIFIED BY 'hivepassword';
 	GRANT all on *.* to 'hiveuser'@localhost identified by 'hivepassword';
 	flush privileges;
 	$HIVE_HOME/bin/schematool -initSchema -dbType mysql (run in new shell)   <<---- Creates the schema for hive metastore  
@@ -473,6 +504,164 @@ hive --service metastore
 
 hive -hiveconf hive.root.logger=DEBUG,console
 
+Practice:
+
+CREATE DATABASE BOOKSDB;
+USE BOOKSDB;
+Header Info:  "ISBN";"BookTitle";"BookAuthor";"Year";"Publisher";"ImageURLS";"ImageURLM";"ImageURLL"
+Value : 	  "0195153448";"Classical Mythology";"Mark P. O. Morford";"2002";"Oxford University Press";"http://images.amazon.com/images/P/0195153448.01.THUMBZZZ.jpg";"http://images.amazon.com/images/P/0195153448.01.MZZZZZZZ.jpg";"http://images.amazon.com/images/P/0195153448.01.LZZZZZZZ.jpg"
+
+--Create normal table:
+CREATE TABLE BOOKS(ISBN INT,BOOKTITLE STRING,BOOKAUTHOR STRING,YEAR INT,PUBLISHER STRING,IMAGEURLS STRING,IMAGEURLM STRING,IMAGEURLL STRING) 
+ROW FORMAT DELIMITED 
+FIELDS TERMINATED BY ','
+STORED AS TEXTFILE;
+
+LOAD DATA LOCAL INPATH "/home/hduser/BX/BX-BooksCorrected.txt" OVERWRITE INTO TABLE BOOKS;
+
+#ALter a table to rename the table itself
+ALTER TABLE BOOKS RENAME TO BOOKLIST;
+
+#TO change the datatype of column isbn from INT to STRING: we can even change the column name too 
+ALTER TABLE BOOKS CHANGE ISBN ISBN_ STRING; 
+
+#alter the delimiter:
+ALTER TABLE BOOKS SET SERDE 'org.apache.hadoop.hive.serde2.lazy.LazySimpleSerDe' WITH SERDEPROPERTIES ('field.delim' = '\;');
+
+#Drop unwanted columns:  (we can also change the order of columns)
+ALTER TABLE BOOKS REPLACE COLUMNS (ISBN STRING, BOOKTITLE STRING, BOOKAUTHOR STRING, YEAR INT, PUBLISHER STRING); 
+
+
+CREATE TABLE USERS(ID INT, LOCATION ARRAY<STRING>, AGE SMALLINT)
+ROW FORMAT DELIMITED 
+FIELDS TERMINATED BY '\;'
+COLLECTION ITEMS TERMINATED BY ','
+STORED AS TEXTFILE;
+
+LOAD DATA LOCAL INPATH '/home/hduser/BX/BX-UsersCorrected.txt' INTO TABLE USERS;
+
+CREATE TABLE RATINGS(ID INT,ISBN STRING,RATING SMALLINT)
+ROW FORMAT DELIMITED
+FIELDS TERMINATED BY '\;'
+STORED AS TEXTFILE;
+
+LOAD DATA LOCAL INPATH '/home/hduser/BX/BX-Book-Ratings.csv' INTO TABLE RATINGS;
+
+#avro file format: 
+--LOAD to HIVE EXTERNAL TABLE FROM ARVO FILE:
+CREATE EXTERNAL TABLE BOOKS_AV(ISBN INT,BOOKTITLE STRING,BOOKAUTHOR STRING,YEAR INT,PUBLISHER STRING)
+ROW FORMAT SERDE 'org.apache.hadoop.hive.serde2.avro.AvroSerDe'
+STORED AS INPUTFORMAT 'org.apache.hadoop.hive.ql.io.avro.AvroContainerInputFormat'
+OUTPUTFORMAT 'org.apache.hadoop.hive.ql.io.avro.AvroContainerOutputFormat'
+LOCATION '/user/hduser/external/books_av';
+
+-- If we extracted avro schema then no need to specify column structure:
+-- Command to extract avro schema from .avro format file is below
+java -jar $SCOOP_HOME/lib/avro-tools-1.8.1.jar getschema hdfs:///user/hduser/external/books_q/part-m-00000.avro > /tmp/books_av.avsc
+
+CREATE EXTERNAL TABLE books_avs
+STORED AS AVRO
+LOCATION '/user/hduser/external/books_av/'
+TBLPROPERTIES ('avro.schema.url'='/tmp/books_av.avsc');
+
+#parquet file format:
+--LOAD to HIVE EXTERNAL TABLE FROM Parquet File Format;
+CREATE EXTERNAL TABLE BOOKS_PQ(ISBN STRING,BOOKTITLE STRING,BOOKAUTHOR STRING,YEAR INT,PUBLISHER STRING)
+STORED AS PARQUET 
+LOCATION '/user/hduser/external/books_pq';
+====================
+#Partitioning 
+
+#Static Partitioning
+set hive.exec.dynamic.partition=true
+set hive.exec.dynamic.partition.mode=strict
+
+CREATE TABLE BOOKS_PART(ISBN STRING,BOOKTITLE STRING,BOOKAUTHOR STRING,YEAR INT,PUBLISHER STRING)
+PARTITIONED BY (YR INT) 
+ROW FORMAT DELIMITED
+FIELDS TERMINATED BY '~'
+STORED AS TEXTFILE;
+
+INSERT INTO TABLE BOOKS_PART PARTITION (YR=1997) SELECT * FROM BOOKS WHERE YEAR=1997;
+
+SHOW PARTITIONS BOOKS_PART; <- #this will show the no of partitions available on the table
+
+--manually create a set of data in hdfs as below
+INSERT OVERWRITE DIRECTORY '/user/hduser/external/books_part/yr=2004' SELECT * FROM BOOKS WHERE YEAR=2004;
+--move the o/p of above path to the location of the partitioned table and do an MSCK to automatically invoke the new partitions.
+
+--MSCK REPAIR doesn't remove partitions if the corresponding folder on HDFS was manually deleted,  it will add any partitions that exist on HDFS but not in metastore to the metastore.
+MSCK REPAIR TABLE BOOKS_PART;
+OR 
+ALTER TABLE BOOKS_PART ADD PARTITION (YR=2004) LOCATION '/user/hduser/external/books_part/yr=2004'
+
+--if the underlying hdfs f/s was deleted without droping the table partition -- we can refresh the metadata to reflect the current state by doing -- Drop the table (only in case of external table) - Recreate the table - Repair it (MSCK REPAIR TABLE table_name)
+--We can “statically” add a partition in the table and move the file into the partition of the table
+--We can alter the partition in the static partition
+
+#Dynamic Partitioning
+set hive.exec.dynamic.partition=true;
+set hive.exec.dynamic.partition.mode=nonstrict;
+#we can’t perform alter on the Dynamic partition.
+
+CREATE TABLE BOOK_EX(ISBN STRING, BOOKTITLE STRING, BOOKAUTHOR STRING, PUBLISHER STRING) --year column is not mentioned as a part of table column here
+PARTITIONED BY (YEAR INT)
+ROW FORMAT DELIMITED
+FIELDS TERMINATED BY '~'
+STORED AS TEXTFILE
+LOCATION '/user/hduser/external/book_xx'; 
+
+INSERT OVERWRITE TABLE BOOK_EX PARTITION(YEAR) SELECT * FROM BOOKS;
+
+====================
+#Bucketing 
+set hive.enforce.bucketing = true ;
+
+#We cannot load the data into a bucketed table using LOAD DATA INPATH command as Hive does not support it. 
+#The no of reducers created at compile time and that will be equal to no.of buckets
+#to gain equal distribution qualify the integer column which has high cardinal values example:empid
+
+--Create table movies
+CREATE TABLE MOVIES(MID INT,  MNAME STRING, GENRE array<STRING>)
+ROW FORMAT DELIMITED
+FIELDS TERMINATED BY ',' 
+COLLECTION ITEMS TERMINATED BY '|' 
+STORED AS TEXTFILE;
+
+--load from file /user/hduser/movies/movies.csv
+LOAD DATA LOCAL INPATH '/home/hduser/MV/movies.csv' INTO TABLE MOVIES;
+
+#above csv file has the header in the file -  alter the table to set new table property
+ALTER TABLE MOVIES SET TBLPROPERTIES ("skip.header.line.count"="1");
+-- to list the properties set fot the table.
+SHOW TBLPROPERTIES MOVIES;
+#to unset the tblproperties 
+ALTER TABLE MOVIES UNSET TBLPROPERTIES ('c', 'x', 'y', 'z'); --> c,x,y,z are all property names
+
+--after the alters performed again load the input .csv data 
+LOAD DATA INPATH '/user/hduser/movies/movies.csv' OVERWRITE INTO TABLE MOVIES;
+--create another table which is clustered and store in ORC format
+CREATE TABLE movies_orc_buc (MID INT,  MNAME STRING, GENRE ARRAY<STRING>)
+CLUSTERED BY (MID) 
+SORTED BY (MID) INTO 5 BUCKETS
+STORED AS ORC;
+--insert data to new table from the old table moveis
+INSERT INTO TABLE MOVIES_ORC SELECT * FROM MOVIES;
+--alter the buckets to 10 from 5
+ALTER TABLE MOVIE_ORC CLUSTERED BY (MID) INTO 5 BUCKETS;
+--again overwrite the insert from old table movies, Now we can see 10 buckets created in hdfs f/s
+
+====================
+#To update the column statistics:
+Table Parameters:
+        COLUMN_STATS_ACCURATE   true -> shows the table stats are collected
+
+ANALYZE TABLE MOVIES COMPUTE STATISTICS FOR COLUMNS MID,MNAME;
+
+DESC FORMATTED MOVIES MID; -> to fetch column stats info
+# col_name              data_type               min                     max                     num_nulls               distinct_count          avg_col_len                max_col_len             num_trues               num_falses              comment
+mid                     int                     1                       193886                  0                       96484                                                                                                                      from deserializer
+
 
 =============================================================================
 PIG:
@@ -480,6 +669,16 @@ PIG:
 for Loading and Storing Hive Data into Pig --> https://acadgild.com/blog/loading-and-storing-hive-data-into-pig
 
 export HCAT_HOME=/usr/local/hive/hcatalog
+
+
+
+Errors and Solution:
+MR job fails with below exception: 
+java.net.ConnectException: Call From master/192.168.1.11 to 0.0.0.0:10020 failed on connection exception: java.net.ConnectException: Connection refused;
+
+10020 is a port for jobHistory server, so check the port is in listen state ->
+	sudo netstat -lpten |  grep -i listen
+also make an entry in mapred-site.xml for the property 'mapreduce.jobhistory.address'
 
 =============================================================================
 Zookeeper:
@@ -972,15 +1171,20 @@ root
  |-- department_id: long (nullable = true)
  |-- department_name: string (nullable = true)
 
-
-
-
-
-
-
-
+scala> dept.select("department_id").show
++-------------+
+|department_id|
++-------------+
+|            2|
+|            3|
+|            4|
+|            5|
+|            6|
+|            7|
++-------------+
 
 //Transformations - RowLevel Transformation
+
 	#mapfunc- acts on one element and produces one element
 		MAP o/p is of type - org.apache.spark.rdd.RDD[Array[String]] = MapPartitionsRDD[8]
 
@@ -988,7 +1192,7 @@ root
      	| (mm.split(",")(1).substring(0, 10).replace("-", "").toInt, mm.split(",")(0).toInt)
      	| })
 
-    #flatmap - acts on one element and produces 0 or 1			or more elements and it flattens list of lists 			into a single list
+    #flatmap - acts on one element and produces 0 or 1 or more elements and it flattens list of lists into a single list
      	 flatmap o/p is of type -   org.apache.spark.rdd.RDD[String] = MapPartitionsRDD[9] at flatMap
 		val l = List("Hello", "How are you doing", "Let us perform copy","dont copy", "as part of count program","how is everything")
 
@@ -1037,24 +1241,14 @@ root
 
 
 		GBK.map( mm => mm._2.toList.sum).take(10).foreach(println)
-		
-	#sorkByKey - takes KV pair as input and produces the output as K V pair where first arg sorted in ascending order by default.
+
 	
-		val products = sc.textFile("/user/hduser/retail_db/products")
-		val productsMap = products.map( mm => (mm.split(",")(1).toInt , mm))
-		val productsSortBy = productsMap.sortByKey(false) // false means descending order
-		productsSortBy.take(10).foreach(println)
-	Composite Sorting - where the key is tuple (2values)
-		val products = sc.textFile("/user/hduser/retail_db/products")
-		val productsMap = products.map( mm => ((mm.split(",")(1).toInt, -mm.split(",")(4).toFloat) , mm)) // - (minus) is to 		sort the 2 value in Key tuple will be sorted by acesnding order and decsending order (works only in Int and Float)
-		val  = productsMap.sortByKey(false) // false means descending order
-		val productsRemoveKey = productsSortBy.map(rec => rec._2)
-		productsRemoveKey.take(10).foreach(println)
-		
-	#ranking - sorting and get N number of records.
-		
 
 https://spoddutur.github.io/spark-notes/distribution_of_executors_cores_and_memory_for_spark_application.html
 https://stackoverflow.com/questions/37871194/how-to-tune-spark-executor-number-cores-and-executor-memory
 http://site.clairvoyantsoft.com/understanding-resource-allocation-configurations-spark-application/
 https://data-flair.training/forums/topic/by-default-how-many-partitions-are-created-in-rdd-in-apache-spark/
+
+Kafka
+======
+https://medium.com/@durgaswaroop/a-practical-introduction-to-kafka-storage-internals-d5b544f6925f
