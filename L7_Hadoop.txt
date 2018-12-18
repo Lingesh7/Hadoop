@@ -586,15 +586,21 @@ INSERT INTO TABLE BOOKS_PART PARTITION (YR=1997) SELECT * FROM BOOKS WHERE YEAR=
 
 SHOW PARTITIONS BOOKS_PART; <- #this will show the no of partitions available on the table
 
---manually create a set of data in hdfs as below
-INSERT OVERWRITE DIRECTORY '/user/hduser/external/books_part/yr=2004' SELECT * FROM BOOKS WHERE YEAR=2004;
+--manually create a part of data from hive to hdfs as below -- Export hive data into file
+INSERT OVERWRITE DIRECTORY '/user/hduser/external/books_part/yr=2004' 
+ROW FORMAT DELIMITED 
+FIELDS TERMINATED BY '~' 
+SELECT * FROM BOOKS WHERE YEAR=2004;
 --move the o/p of above path to the location of the partitioned table and do an MSCK to automatically invoke the new partitions.
 
---MSCK REPAIR doesn't remove partitions if the corresponding folder on HDFS was manually deleted,  it will add any partitions that exist on HDFS but not in metastore to the metastore.
+#MSCK REPAIR doesn't remove partitions if the corresponding folder on HDFS was manually deleted,  it will add any partitions that exist on HDFS but not in metastore to the metastore.
 MSCK REPAIR TABLE BOOKS_PART;
 OR 
-ALTER TABLE BOOKS_PART ADD PARTITION (YR=2004) LOCATION '/user/hduser/external/books_part/yr=2004'
-
+ALTER TABLE BOOKS_PART ADD PARTITION (YR=2004) LOCATION '/user/hduser/external/books_part/yr=2004';
+ALTER TABLE EMPLOYEE ADD PARTITION (year=2005) PARTITION (year=2006) PARTITION (year=2008) PARTITION (year=2009) PARTITION (year=2010);
+--also consider adding multiple partitions in single query
+ALTER TABLE db_bdpbase.Employee DROP IF EXISTS PARTITION (year=2008), PARTITION(year=2009), PARTITION(year=2010);
+ALTER TABLE db_bdpbase.Employee DROP IF EXISTS PARTITION(year>2010);
 --if the underlying hdfs f/s was deleted without droping the table partition -- we can refresh the metadata to reflect the current state by doing -- Drop the table (only in case of external table) - Recreate the table - Repair it (MSCK REPAIR TABLE table_name)
 --We can “statically” add a partition in the table and move the file into the partition of the table
 --We can alter the partition in the static partition
@@ -602,6 +608,9 @@ ALTER TABLE BOOKS_PART ADD PARTITION (YR=2004) LOCATION '/user/hduser/external/b
 #Dynamic Partitioning
 set hive.exec.dynamic.partition=true;
 set hive.exec.dynamic.partition.mode=nonstrict;
+set hive.exec.max.dynamic.partitions=1000
+set hive.exec.max.dynamic.partitions.pernode=100
+
 #we can’t perform alter on the Dynamic partition.
 
 CREATE TABLE BOOK_EX(ISBN STRING, BOOKTITLE STRING, BOOKAUTHOR STRING, PUBLISHER STRING) --year column is not mentioned as a part of table column here
@@ -612,6 +621,12 @@ STORED AS TEXTFILE
 LOCATION '/user/hduser/external/book_xx'; 
 
 INSERT OVERWRITE TABLE BOOK_EX PARTITION(YEAR) SELECT * FROM BOOKS;
+
+#__hive_default_partition__ 
+--this gets create when we load data into partitioned table dynamically and partition column has a NULL value.
+--to check we can issue the query like below in where clause
+SELECT * FROM BOOK_EX WHERE YEAR="__HIVE_DEFAULT_PARTITION__";
+
 
 ====================
 #Bucketing 
@@ -661,7 +676,34 @@ ANALYZE TABLE MOVIES COMPUTE STATISTICS FOR COLUMNS MID,MNAME;
 DESC FORMATTED MOVIES MID; -> to fetch column stats info
 # col_name              data_type               min                     max                     num_nulls               distinct_count          avg_col_len                max_col_len             num_trues               num_falses              comment
 mid                     int                     1                       193886                  0                       96484                                                                                                                      from deserializer
+====================
+#Indexing in Hive
+--whenever we perform a query on a table that has an index, there is no need for the query to scan all the rows in the table. Further, it checks the index first and then goes to the particular column and performs the operation.
+--An Index acts as a reference to the records
+Types - COMPACT Indexing -stores the pair of indexed column’s value and its blockid. 
+		 and BITMAP Index - stores the combination of indexed column value and list of rows as a bitmap
+#Creating Index
+CREATE INDEX index_name
+ON TABLE table_name (columns,....)
+AS 'org.apache.hadoop.hive.ql.index.compact.CompactIndexHandler'  |  'BITMAP'  <-- refers the type of idex to be created
+WITH DEFERRED REBUILD;
+ALTER INDEX index_nam on table_name REBUILD;
+--We can have any number of indexes for a particular table and any type of indexes as well.
+-- on the same column we can create both type of indexes on same column
+SHOW FORMATTED INDEX ON MOVIES; <-- list the no of indexes on the tables if exists
+--result
+idx_name                tab_name                col_names               idx_tab_name            idx_type                comment
 
+mid_index               movies                  mid                     movies__movies_mid_index__      compact
+bit_indx                movies                  mid                     movies__movies_bit_indx__       bitmap
+--
+--drop unwanted index
+DROP INDEX IF EXISTS BIT_INDX ON MOVIES;
+
+When not to use index in hive:
+--Indexes are advised to build on the columns on which you frequently perform operations.
+--Building more number of indexes also degrade the performance of your query.
+--Type of index to be created should be identified prior to its creation (if your data requires bitmap you should not create compact).This leads to increase in time for executing your query.
 
 =============================================================================
 PIG:
