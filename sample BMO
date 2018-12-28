@@ -1,0 +1,100 @@
+
+MRP Database Redirected Restore step by step approach
+
+** Make sure you have backup images timestamp and backup images should
+   be copied under /mrp_backup/ dir by Application team
+
+00  cd /dbaexport/restores
+    cd /<target_db_name>
+	( if you are planning to restore mrp1 db then)
+	cd /mrp1
+	
+01  mkdir yymm ( for example mkdir 1711)
+    
+02  copy all files from the previosly restored script from the most recent previous folder
+
+    i.e cp -R 1709 1711
+
+03  Not required in MRP env 
+
+    Verify the backup image you want to use:
+
+    01db2adutl | tee 01db2adutl.out
+
+04  Update the timestamps to restoring ddl script
+
+    vi node*.sql
+	
+05  Backup db2set ,DBM and DB cfg prior to restore
+
+    db2set -all > db2set.bef
+    
+	db2 get dbm cfg > dbmcfg_<db_name>.bef
+	
+    db2 get db cfg for mrp1  > dbcfg_<db_name>.bef
+
+    	
+05 Restore partition 0	
+
+   nohup r0 > r0.out 2>&1 & 
+
+06 You can run 3 session concurrently after successful completion of r0
+     
+	 i) nohup r12 > r12.out 2>&1 &
+    ii) nohup r34 > r34.out 2>&1 &   
+   iii) nohup r56 > r56.out 2>&1 &
+   
+optional :  monitor restore progress 
+
+issue below cmds :
+while true
+do
+   db2 list utilities show detail
+   sleep 5
+done
+   
+07 Update the newlogpath db cfg parameter pointing back to the target database
+
+   06newlogpath | tee 06newlogpath.out
+
+08 Reset the db cfg parameters back to normal ( TRACKMODE and LOGARCMETH1 turn off )
+
+   08dbcfg | tee 08dbcfg.out
+   
+   test database connectivity 
+   
+   db2_all "db2 connect to <db_name>"
+   
+09  Optional: grant DBADM and SECADM to target DB2 instance
+
+In case the target db instance id has issue to connect, then connect to the target DB with the source db instance id and do the grant to the source instance id first   
+
+db2 connect to <target_db_name> user <source_db2_instance>;
+db2 grant dbadm on database to user <target_db2_instance>;
+db2 grant secadm on database to user <target_db2_instance>;
+
+10  Grant access to the new instance id and users
+
+    10grant | tee 10grant.out
+	
+11  Update the Peoplesoft control parameters
+
+    11dbname | tee 11dbname.out
+	
+12  Backup db2set ,DBM and DB cfg after to restore
+
+    db2set -all > db2set.aft
+    
+	db2 get dbm cfg > dbmcfg_<db_name>.aft
+	
+    db2 get db cfg for mrp1  > dbcfg_<db_name>.aft
+	
+13  Comapre db2set,DBM and DB cfg output file before and after restore
+
+    diff db2set.aft db2set.bef  >  db2set.diff.out
+	
+	diff dbmcfg_<db_name>.aft dbmcfg_<db_name>.bef > dbmcfg.diff.out
+	
+	diff dbcfg_<db_name>.aft dbcfg_<db_name>.bef > dbcfg.diff.out
+	
+Note: Verify diff output files
