@@ -1290,7 +1290,7 @@ https://spoddutur.github.io/spark-notes/distribution_of_executors_cores_and_memo
 https://stackoverflow.com/questions/37871194/how-to-tune-spark-executor-number-cores-and-executor-memory
 http://site.clairvoyantsoft.com/understanding-resource-allocation-configurations-spark-application/
 https://data-flair.training/forums/topic/by-default-how-many-partitions-are-created-in-rdd-in-apache-spark/
-
+Spark examples: http://www.javachain.com/import-teradata-using-spark-into-hadoop/
 Kafka
 ======
 https://medium.com/@durgaswaroop/a-practical-introduction-to-kafka-storage-internals-d5b544f6925f
