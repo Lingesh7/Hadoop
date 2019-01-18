@@ -1166,7 +1166,9 @@ val sc = new SparkContext(conf)
 sc.getConf.getAll
 sc.getConf.getAll.foreach(println)
 
-//RDD
+//RDD (resilient distributed datasets)
+
+
 
 //To create SqlContext 
 scala> import org.apache.spark.sql
