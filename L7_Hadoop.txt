@@ -1233,26 +1233,29 @@ val rdd = sc.textFile("home/data/keywords.txt", 3)
 		val final = leftouterjoinfilter.map(mm => mm._2._1)
 
 	
-
-	
-		
-	
 //Actions: Action returns values to the driver program.
+
 	#reduce(func) - returns a data set by aggregating the elementsof the data set using a function func. 
 			The function takes two arguments and returns a single argument.
 		val rdd = sc.parallelize(1 to 5) 
 		val sumRdd = rdd.reduce((t1,t2) => t1 + t2)
+		
 	#collect() - All the elements of the data set are returned as an array to the driver program. Collect will convert the distributed RDD in to a single threaded collection. Collect will attempt to copy every single element in the RDD onto the single driver program, and then run out of memory and crash. use take() or takeSample() api as collect will cause memory realated issue as collect api uses heavy memory.
+	
 	#count() - This returns the number of elements in the data set.
+	
 	#first() -  This returns the first element in the data set.
+	
 	#take(n) - This returns the first n elements in the data set as an array.
+	
 	#saveAsTextFile(path) - Write the elements of the RDD as a text file in the local file system, HDFS, or another storage system.
+	
 	#foreach - If we apply foreach directly on RDD - it will not return anything. Because spark api's will be executed in worker nodes where the apis we are performing on the arrays will be excuted in current session/machine where we running it.
 
 //Paired RDDs: Each element in the pair RDDs is represented as a key/value pair. Pair RDDs are useful for sorting, grouping.
 
 	#groupByKey - doesn't take any arguments to be passed, doesnot use combiner 
-		In groupByKey(), all the key-value pairs are shuffled around. This is a lot of unnecessary data to being transferred over the network.
+			In groupByKey(), all the key-value pairs are shuffled around. This is a lot of unnecessary data to being transferred over the network.
 		val words = Array("one", "two", "two", "three", "three", "three")
 		val wordPairsRDD = sc.parallelize(words).map(word => (word, 1))
 		val wordCountsWithGroup = wordPairsRDD
@@ -1269,8 +1272,48 @@ val rdd = sc.textFile("home/data/keywords.txt", 3)
 	
 	#combineByKey - It can be used when you are combining elements but your return type differs from your input value type.
 	
+	#sortByKey() - applied on a data set of (K, V) pairs, it returns a data set of (K, V) pairs where keys are sorted in ascending or descending order as specified in the boolean ascending argument. 
+		val rdd = sc.textFile("/home/data/people.csv")
+		val splitRdd = rdd.filter(line => !line.contains("year")).map(line => line.split(","))
+		val fieldRdd = splitRdd.map(f => (f(1),f(3).toInt)).sortByKey(false) <- false represents that the data to be sorted in desc order
+		fieldRdd.foreach(println)
+	
+	#
+	
+Refer ( https://data-flair.training/blogs/apache-spark-rdd-persistence-caching/ ) 
 
+//Lineage -  RDD lineage is nothing but the graph of all the parent RDDs of an RDD. it creates a logical execution plan.
+			To view the lineage, use toDebugString
+		scala> rdd.toDebugString
+		
+//DAG - Direct Acylic Graph: Phy exec plan.  When an action is called on the RDD, Spark creates the DAG and submits the DAG to the DAG scheduler.
+		1. The DAG scheduler divides operators such as map, flatMap, and so on, into stages of tasks.
+		2. The result of a DAG scheduler is a set of stages.
+		3. The stages are passed on to the Task Scheduler.
+		4. The Task Scheduler launches tasks via Cluster Manager.
+		5. The worker executes the tasks.
+	At a high level, Spark applies two transformations to create a DAG. The two transformations are as follows:
+		• Narrow transformation: The operators that don’t require the data to be shuffled across the partitions are grouped together as a stage.
+			Examples are map, filter, and so on.
+		• Wide transformation: The operators that require the data to be shuffled are grouped together as a stage.
+			An example is reduceByKey
 
+//Persisting RDD:  Persisting an RDD stores the computation result in memory and reuses it in other actions on that data set. 
+	#cache() - Uses the default storage level is StorageLevel.MEMORY_ONLY -> RDD is stored as deserialized Java object in the JVM. If the size of RDD is 
+			greater than memory, It will not cache some partition and recompute them next time whenever needed. 
+			
+	#persist() - we can use various storage levels in this method as follows 
+		MEMORY_AND_DISK -> When the size of RDD is greater than the size of memory, it stores the excess partition on the disk, and retrieve from disk whenever required,
+		MEMORY_ONLY_SER, MEMORY_AND_DISK_SER, DISK_ONLY
+		
+		val units = words.map ( word => (word, 1) ).persist(StorageLevel.MEMORY_ONLY) or
+		val units = words.map ( word => (word, 1) ).cache
+	
+	#unpersist() - Spark monitor the cache of each node automatically and drop out the old data partition in the LRU (least recently used) fashion.
+					We can also remove the cache manually using RDD.unpersist() method.
+					
+					
+#######################
 //DataFrame - Distributed collection with structure
 
 // When we load/read json from f/s - it read and create as a DataFrame
@@ -1321,3 +1364,5 @@ Spark examples: http://www.javachain.com/import-teradata-using-spark-into-hadoop
 Kafka
 ======
 https://medium.com/@durgaswaroop/a-practical-introduction-to-kafka-storage-internals-d5b544f6925f
+
+http://apachesparkbook.blogspot.com/search/label/a54%7C%20collectAsMap%28%29 --> mini basics
