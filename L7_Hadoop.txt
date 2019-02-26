@@ -1157,37 +1157,119 @@ spark -version
 
 spark-shell --verbose --master yarn --driver-memory 512m --num-executors 1 --executor-cores 2 --executor-memory 512m
 
-//Initialize programatically
+//Initialize programatically - v1.6
 import org.apache.spark.{SparkConf, SparkContext}
 val conf = new SparkConf().setAppName("anyName").setMaster("yarn")
 val sc = new SparkContext(conf)
+
+//To create SqlContext 
+scala> import org.apache.spark.sql
+scala> val sqlc = new org.apache.spark.sql.SQLContext(sc)
+sqlc: org.apache.spark.sql.SQLContext = org.apache.spark.sql.SQLContext@614c7175
 
 //To list the environment details of spark which is already running 
 sc.getConf.getAll
 sc.getConf.getAll.foreach(println)
 
-//RDD (resilient distributed datasets)
+//RDD (resilient distributed datasets) -- RDD is an immutable collection of distributed objects/elements partitioned across the
+nodes of clusters and operated on in parallel. Features are immutable, inmemory computation, lazy evaluations, Fault tolerance,  Partitioning. 
 
+//RDD operation: Transformations - Creating a new RDD from an existing RDD is known as transformation. Ex: map, flatMap
+			Actions - all the transformations are triggered only when an action is called. Ex: sum, count.
+		
+//RDD Creation: 
+//Using parallized collection - it can be created by applying parallelize method on an existing collection.
+val data = Array(1,2,3,4,5)
+val rddData = sc.parallelize(data)
+rddData.collect() 
 
-
-//To create SqlContext 
-scala> import org.apache.spark.sql
-import org.apache.spark.sql
-
-scala> val sqlc = new org.apache.spark.sql.SQLContext(sc)
-sqlc: org.apache.spark.sql.SQLContext = org.apache.spark.sql.SQLContext@614c7175
-
-// Collect - will convert the distributed RDD in to a single threaded collection. use take() api as collect will cause memory realated issue as collect api uses heavy memory.
-
-//foreach - If we apply foreach directly on RDD - it will not return anything. Because spark api's will be executed in worker nodes where the apis we are performing on the arrays wwill be excuted in current session/machine where we running it.
+//Using External Sources - Use textFile() of SparkContext.
+val rdd = sc.textFile("hdfs://localhost:9000/data/keywords.txt")
 
 //Read data from HDFS - it creates a RDD
 scala> val orders = sc.textFile("/user/hduser/retail_db/orders")
 	orders: org.apache.spark.rdd.RDD[String] = /user/hduser/retail_db/orders MapPartitionsRDD[27] at textFile at <console>:25
 
 // Read data from Linux FS 
-scala> val ordersRaw = scala.io.Source.fromFile("/home/hduser/retail_db/orders") <-- Itenory type - to change ti to RDD
-		val ordersRDD = sc.parallelize(ordersRaw)
+scala> val ordersRaw = scala.io.Source.fromFile("/home/hduser/retail_db/orders") <-- Itenory type - to change this to RDD use parallelize method.
+scala> val ordersRDD = sc.parallelize(ordersRaw)
+		
+//Creating an RDD with file Partitioning:  By default, it divides data into two partitions also the # of partitions is equal to the # of CPU cores available in the cluster, but the number of partitions can be specified while creating an RDD.
+val rdd = sc.textFile("home/data/keywords.txt", 3)
+
+//Transformations - RowLevel Transformation
+
+	#mapfunc- acts on one element and produces one element. Returns a new data set by operating on each element of the source RDD.
+		MAP o/p is of type - org.apache.spark.rdd.RDD[Array[String]] = MapPartitionsRDD[8]
+
+		val orderDate = orders.map(mm => {
+     	| (mm.split(",")(1).substring(0, 10).replace("-", "").toInt, mm.split(",")(0).toInt)
+     	| })
+
+   	#flatmap - acts on one element and produces 0 or 1 or more elements and it flattens list of lists into a single list
+     	 	flatmap o/p is of type -   org.apache.spark.rdd.RDD[String] = MapPartitionsRDD[9] at flatMap
+		val l = List("Hello", "How are you doing", "Let us perform copy","dont copy", "as part of count program","how is everything")
+		val lst = List("Hello,Hello", "Hello,Hello")
+		val lstRdd = sc.parallelize(lst)
+		val lstFm = lstRdd.flatMap(mm => mm.split(","))
+		val wc = lstFm.map(mm => (mm, 1)).countByKey
+
+	#filter -  Returns a new RDD that contains only elements that satisfy the condition.
+		val rdd = sc.textFile("/home/data/keywords.txt")
+		val filterRdd = rdd.filter(line => line.contains("Kafka"))
+		filterRdd.collect()
+		
+	#joinfunc - Join needs a paired RDD to join two dataset. key value (primarykey) should be similar
+
+		val joi = sc.textFile("/user/hduser/retail_db/order_items")
+		val ordersMap = jo.map(mm => (mm.split(",")(0).toInt, mm.split(",")(1).substring(0,10)))
+		val orderItemMap = joi.map(mm => (mm.split(",")(1).toInt,mm.split(",")(4).toFloat))
+		val join = ordersMap.join(orderItemMap)
+		join.take(10).foreach(println)
+
+	#leftouterjoin
+		val leftOuterJoin = ordersMap.leftOuterJoin(orderItemMap)
+		val leftouterjoinfilter = leftOuterJoin.filter( mm => mm._2._2 == None)
+		val final = leftouterjoinfilter.map(mm => mm._2._1)
+
+	
+
+	
+		
+	
+//Actions: Action returns values to the driver program.
+	#reduce(func) - returns a data set by aggregating the elementsof the data set using a function func. 
+			The function takes two arguments and returns a single argument.
+		val rdd = sc.parallelize(1 to 5) 
+		val sumRdd = rdd.reduce((t1,t2) => t1 + t2)
+	#collect() - All the elements of the data set are returned as an array to the driver program. Collect will convert the distributed RDD in to a single threaded collection. Collect will attempt to copy every single element in the RDD onto the single driver program, and then run out of memory and crash. use take() or takeSample() api as collect will cause memory realated issue as collect api uses heavy memory.
+	#count() - This returns the number of elements in the data set.
+	#first() -  This returns the first element in the data set.
+	#take(n) - This returns the first n elements in the data set as an array.
+	#saveAsTextFile(path) - Write the elements of the RDD as a text file in the local file system, HDFS, or another storage system.
+	#foreach - If we apply foreach directly on RDD - it will not return anything. Because spark api's will be executed in worker nodes where the apis we are performing on the arrays will be excuted in current session/machine where we running it.
+
+//Paired RDDs: Each element in the pair RDDs is represented as a key/value pair. Pair RDDs are useful for sorting, grouping.
+
+	#groupByKey - doesn't take any arguments to be passed, doesnot use combiner 
+		In groupByKey(), all the key-value pairs are shuffled around. This is a lot of unnecessary data to being transferred over the network.
+		val words = Array("one", "two", "two", "three", "three", "three")
+		val wordPairsRDD = sc.parallelize(words).map(word => (word, 1))
+		val wordCountsWithGroup = wordPairsRDD
+		.groupByKey()
+		.map(t => (t._1, t._2.sum))
+		.collect()
+		
+	#reduceByKey - works much better on a large dataset. That's because Spark knows it can combine output with a common key on each partition before shuffling the data. pairs on the same machine with the same key are combined (by using the lamdba function passed into reduceByKey) before the data is shuffled. Then the lamdba function is called again to reduce all the values from each partition to produce one final result
+		val words = Array("one", "two", "two", "three", "three", "three")
+		val wordPairsRDD = sc.parallelize(words).map(word => (word, 1))
+		val wordCountsWithReduce = wordPairsRDD
+		.reduceByKey(_ + _)
+		.collect()
+	
+	#combineByKey - It can be used when you are combining elements but your return type differs from your input value type.
+	
+
 
 //DataFrame - Distributed collection with structure
 
@@ -1227,64 +1309,7 @@ scala> dept.select("department_id").show
 |            7|
 +-------------+
 
-//Transformations - RowLevel Transformation
 
-	#mapfunc- acts on one element and produces one element
-		MAP o/p is of type - org.apache.spark.rdd.RDD[Array[String]] = MapPartitionsRDD[8]
-
-		val orderDate = orders.map(mm => {
-     	| (mm.split(",")(1).substring(0, 10).replace("-", "").toInt, mm.split(",")(0).toInt)
-     	| })
-
-    #flatmap - acts on one element and produces 0 or 1 or more elements and it flattens list of lists into a single list
-     	 flatmap o/p is of type -   org.apache.spark.rdd.RDD[String] = MapPartitionsRDD[9] at flatMap
-		val l = List("Hello", "How are you doing", "Let us perform copy","dont copy", "as part of count program","how is everything")
-
-		val lst = List("Hello,Hello", "Hello,Hello")
-		val lstRdd = sc.parallelize(lst)
-		val lstFm = lstRdd.flatMap(mm => mm.split(","))
-		val wc = lstFm.map(mm => (mm, 1)).countByKey
-
-	#joinfunc - Join needs a paired RDD to join two dataset 
-				key value (primarykey) should be similar
-
-		val joi = sc.textFile("/user/hduser/retail_db/order_items")
-
-		val ordersMap = jo.map(mm => (mm.split(",")(0).toInt, mm.split(",")(1).substring(0,10)))
-
-		val orderItemMap = joi.map(mm => (mm.split(",")(1).toInt,mm.split(",")(4).toFloat))
-		
-		val join = ordersMap.join(orderItemMap)
-		join.take(10).foreach(println)
-
-	#leftouterjoin
-		val leftOuterJoin = ordersMap.leftOuterJoin(orderItemMap)
-
-		val leftouterjoinfilter = leftOuterJoin.filter( mm => mm._2._2 == None)
-
-		val final = leftouterjoinfilter.map(mm => mm._2._1)
-
-	#reducefunc
-		oi.map( mm => (mm.split(",")(3), "")).countByKey.foreach(println)
-
-		val orderItemStotal = joi.map(mm => mm.split(",")(5).toFloat)
-	
-		orderItemStotal.take(10)
-
-		val revenue = orderItemStotal.reduce( (x, y) => x + y)
-
-	#groupByKey - doesn't take any arguments to be passed, doesnot use combiner 
-
-		val orderItemsMap = joi.map( mm => (mm.split(",")(1).toInt, mm.split(",")(4).toFloat))
-		
-		val GBK = orderItemsMap.groupByKey
-
-		 GBK.take(2).foreach(println)
-		(41234,CompactBuffer(109.94))
-		(65722,CompactBuffer(119.98, 400.0, 399.98, 199.95, 199.98))
-
-
-		GBK.map( mm => mm._2.toList.sum).take(10).foreach(println)
 
 	
 
