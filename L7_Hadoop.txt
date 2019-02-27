@@ -1278,7 +1278,11 @@ val rdd = sc.textFile("home/data/keywords.txt", 3)
 		val fieldRdd = splitRdd.map(f => (f(1),f(3).toInt)).sortByKey(false) <- false represents that the data to be sorted in desc order
 		fieldRdd.foreach(println)
 	
-	#
+	#countByKey - For a given pair RDD, this action ignores the value of each row and reports only the number of values with the same key for each key to the driver.
+		val candyTx = sc.parallelize(List(("candy1", 5.2), ("candy2", 3.5),("candy1", 2.0), ("candy3", 6.0)))
+		candyTx.countByKey()
+		scala.collection.Map[String,Long] = Map(candy1 -> 2, candy2 -> 1, candy3 -> 1)
+		
 	
 Refer ( https://data-flair.training/blogs/apache-spark-rdd-persistence-caching/ ) 
 
@@ -1298,18 +1302,21 @@ Refer ( https://data-flair.training/blogs/apache-spark-rdd-persistence-caching/ 
 		• Wide transformation: The operators that require the data to be shuffled are grouped together as a stage.
 			An example is reduceByKey
 
+
+
 //Persisting RDD:  Persisting an RDD stores the computation result in memory and reuses it in other actions on that data set. 
 	#cache() - Uses the default storage level is StorageLevel.MEMORY_ONLY -> RDD is stored as deserialized Java object in the JVM. If the size of RDD is 
 			greater than memory, It will not cache some partition and recompute them next time whenever needed. 
 			
 	#persist() - we can use various storage levels in this method as follows 
 		MEMORY_AND_DISK -> When the size of RDD is greater than the size of memory, it stores the excess partition on the disk, and retrieve from disk whenever required,
-		MEMORY_ONLY_SER, MEMORY_AND_DISK_SER, DISK_ONLY
+		MEMORY_ONLY_SER, MEMORY_AND_DISK_SER - The serialization option determines whether the data in the RDD should be stored as a serialized object or not.
+		DISK_ONLY
 		
 		val units = words.map ( word => (word, 1) ).persist(StorageLevel.MEMORY_ONLY) or
 		val units = words.map ( word => (word, 1) ).cache
 	
-	#unpersist() - Spark monitor the cache of each node automatically and drop out the old data partition in the LRU (least recently used) fashion.
+	#unpersist() - Spark will use the LRU (least recently used) eviction policy to automatically evict the RDDs that have not been recently accessed.
 					We can also remove the cache manually using RDD.unpersist() method.
 					
 					
