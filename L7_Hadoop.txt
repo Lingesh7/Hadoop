@@ -1321,8 +1321,79 @@ Refer ( https://data-flair.training/blogs/apache-spark-rdd-persistence-caching/ 
 					
 					
 #######################
-//DataFrame - Distributed collection with structure
+//SparkSQL - The Spark SQL module consists of DataFrames and Datasets and Catalyst Optimizer.
+	
+//DataFrame - A DataFrame is an immutable, distributed collection of data that is organized into rows, where each one consists set of columns which has name and type. In other words, this distributed collection of data has a structure defined by a schema. 
 
+//Creating DataFrames
+	//Creating DataFrames from RDDs: 
+		"To use toDF function we need to import implicit modules" . 
+		Used for converting Scala objects (incl. RDDs) into a Dataset, DataFrame, Columns or supporting such conversions. implicits object is defined inside SparkSession and hence requires that you build a SparkSession instance first before importing implicits conversions.
+		
+		>> import org.apache.spark.sql.SparkSession
+		>> val spark: SparkSession = new SparkSession
+									.builder
+									.master("local[*]")
+									.enableHiveSupport()
+									.config("spark.sql.warehouse.dir", "target/spark-warehouse")
+									.setAppName("someName")
+									.getOrCreate()
+		>> import spark.implicits._
+		>> import scala.util.Random
+		>> val df = Seq("SOME DATA!").toDF("columnName")
+		>> val df2 = sc.parallelize(Seq("hello, I'm a very low-level RDD")).toDF
+		>> val rdd2 = spark.sparkContext.parallelize(1 to 10).map(x => (x,Random.nextInt(100)* x))
+		>> val kvDF = rdd2.toDF("key","value")
+	Printing the Schema and Showing the Data of a DataFrame
+		>> kvDF.printSchema
+			|-- key: integer (nullable = false)
+			|-- value: integer (nullable = false)
+		>> kvDF.show(2)
+			+---+-----+
+			|key|value|
+			+---+-----+
+			| 1| 58	  |
+			| 2| 18   |
+			+---+-----+
+		>> spark.range(5,15,2).toDF("num").show  //spark.range itself results in RDD
+		
+	//Converting a Collection Tuple to a DataFrame Using Spark’s toDF Implicit:
+		>> val movies = Seq(("Damon, Matt", "The Bourne Ultimatum", 2007L),
+							("Damon, Matt", "Good Will Hunting", 1997L))
+		>> val moviesDF = movies.toDF("actor", "title", "year")
+		>> moviesDF.printSchema
+			|-- actor: string (nullable = true)
+			|-- title: string (nullable = true)
+			|-- year: long (nullable = false)
+		>> moviesDF.show
+			+-----------+--------------------+----+
+			| actor		| title				 |year|
+			+-----------+--------------------+----+
+			|Damon, Matt|The Bourne Ultimatum|2007|
+			|Damon, Matt| Good Will Hunting  |1997|
+			+-----------+--------------------+----+
+			
+	//Creating a DataFrame from an RDD with a Schema Created Programmatically
+		>> import org.apache.spark.sql.Row
+		>> import org.apache.spark.sql.types._
+		>> val peopleRDD = spark.sparkContext.parallelize(Array(Row(1L, "John Doe", 30L), Row(2L, "Mary Jane", 25L)))
+		>> val schema = StructType(Array(
+					   StructField("id", LongType, true),
+					   StructField("name", StringType, true),
+					   StructField("age", LongType, true) ))
+		>> val peopleDF = spark.createDataFrame(peopleRDD, schema)
+	Displaying the Schema of peopleDF and Its Data
+		>> peopleDF.printSchema
+		|-- id: long (nullable = true)
+		|-- name: string (nullable = true)
+		|-- age: long (nullable = true)
+		>> peopleDF.show
+		+--+-----------+---+
+		|id| name     |age |
+		+--+-----------+---+
+		| 1| John Doe | 30 |
+		| 2| Mary Jane| 25 |
+		+--+-----------+---+
 // When we load/read json from f/s - it read and create as a DataFrame
 scala> val orders = sqlc.load("/user/hduser/retail_db_json/orders", "json")
 orders: org.apache.spark.sql.DataFrame = [order_customer_id: bigint, order_date: string ... 2 more fields]
