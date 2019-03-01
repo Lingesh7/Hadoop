@@ -1328,7 +1328,7 @@ Refer ( https://data-flair.training/blogs/apache-spark-rdd-persistence-caching/ 
 //Creating DataFrames
 	//Creating DataFrames from RDDs: 
 		"To use toDF function we need to import implicit modules" . 
-		Used for converting Scala objects (incl. RDDs) into a Dataset, DataFrame, Columns or supporting such conversions. implicits object is defined inside SparkSession and hence requires that you build a SparkSession instance first before importing implicits conversions.
+		IMPLICITS - Used for converting Scala objects (incl. RDDs) into a Dataset, DataFrame, Columns or supporting such conversions. implicits object is defined inside SparkSession and hence requires that you build a SparkSession instance first before importing implicits conversions.
 		
 		>> import org.apache.spark.sql.SparkSession
 		>> val spark: SparkSession = new SparkSession
@@ -1339,9 +1339,9 @@ Refer ( https://data-flair.training/blogs/apache-spark-rdd-persistence-caching/ 
 									.setAppName("someName")
 									.getOrCreate()
 		>> import spark.implicits._
-		>> import scala.util.Random
 		>> val df = Seq("SOME DATA!").toDF("columnName")
 		>> val df2 = sc.parallelize(Seq("hello, I'm a very low-level RDD")).toDF
+		>> import scala.util.Random
 		>> val rdd2 = spark.sparkContext.parallelize(1 to 10).map(x => (x,Random.nextInt(100)* x))
 		>> val kvDF = rdd2.toDF("key","value")
 	Printing the Schema and Showing the Data of a DataFrame
@@ -1375,7 +1375,7 @@ Refer ( https://data-flair.training/blogs/apache-spark-rdd-persistence-caching/ 
 			
 	//Creating a DataFrame from an RDD with a Schema Created Programmatically
 		>> import org.apache.spark.sql.Row
-		>> import org.apache.spark.sql.types._
+		>> import org.apache.spark.sql.types._		//required to using types in schema creation
 		>> val peopleRDD = spark.sparkContext.parallelize(Array(Row(1L, "John Doe", 30L), Row(2L, "Mary Jane", 25L)))
 		>> val schema = StructType(Array(
 					   StructField("id", LongType, true),
@@ -1394,42 +1394,53 @@ Refer ( https://data-flair.training/blogs/apache-spark-rdd-persistence-caching/ 
 		| 1| John Doe | 30 |
 		| 2| Mary Jane| 25 |
 		+--+-----------+---+
-// When we load/read json from f/s - it read and create as a DataFrame
-scala> val orders = sqlc.load("/user/hduser/retail_db_json/orders", "json")
-orders: org.apache.spark.sql.DataFrame = [order_customer_id: bigint, order_date: string ... 2 more fields]
-
-scala> val dept = sqlContext.read.json("/user/cloudera/")
-dept: org.apache.spark.sql.DataFrame = [department_id: bigint, department_name: string]
-
-scala> dept.show
-+-------------+---------------+
-|department_id|department_name|
-+-------------+---------------+
-|            2|        Fitness|
-|            3|       Footwear|
-|            4|        Apparel|
-|            5|           Golf|
-|            6|       Outdoors|
-|            7|       Fan Shop|
-+-------------+---------------+
-
-scala> dept.printSchema
-root
- |-- department_id: long (nullable = true)
- |-- department_name: string (nullable = true)
-
-scala> dept.select("department_id").show
-+-------------+
-|department_id|
-+-------------+
-|            2|
-|            3|
-|            4|
-|            5|
-|            6|
-|            7|
-+-------------+
-
+		
+	//Creating DataFrames from Data Sources:
+		General format - >> spark.read.format(...).option("key", "value").schema(...).load()
+	#txt file 
+		>> val textFile = spark.read.text("README.md")
+		>> textFile.show(5, false)  //show 5 lines and dont truncate
+	#CSV format
+		>> import org.apache.spark.sql.types._
+		>> val movieSchema = new StructType()
+						.add("actor",SringType,true)
+						.add("title",StringType,true)
+						.add("year",IntegerType,true)
+		>> val movies4 = spark.read.option("header","true").option("sep", "\t").option("mode", "PERMISSIVE").schema(movieSchema).csv("<path>/movies.csv")
+		
+	'inferSchema option -  specifies whether Spark should try to infer the column type based on column value. Or we can define user-specified-schema using StructType and StructField & specify in schema option as above line. If the inferSchema option is false and no schema is provided, Spark will assume the data type of all the columns to be the string type.'
+		
+	//Verify correctness of the data:
+		'PERMISSIVE (default): nulls are inserted for fields that could not be parsed correctly.'
+			We can add a special column _corrupt_record, which does not exist in the data. This column captures rows that did not parse correctly. To Query which rows not parsed correctly we can use the below codes:
+				>> spark.read.schema(schema).csv(file).filter($"_corrupt_record".isNotNull).count()
+				>> spark.read.schema(schema).csv(file).select("_corrupt_record").show()
+		'DROPMALFORMED: drops lines that contain fields that could not be parsed'
+		'FAILFAST: aborts the reading if any malformed data is found'
+			
+	#JSON file
+		>> val orders = sqlContext.load("/user/hduser/retail_db_json/orders", "json")
+			orders: org.apache.spark.sql.DataFrame = [order_customer_id: bigint, order_date: string ... 2 more fields]
+	// JSON Common Options -> allowComments, multiLine, samplingRatio  	
+		>> val movies5 = spark.read.option("multiLine","true").option("inferSchema","true").schema(movieSchema2).json("<path>/movies.json")  //specify a schema to override the Sparks inferring schema.
+	'When a column data type specified in the schema doesn’t match up with the value in the JSON file?, it will set the value of all the columns in that row to null. Instead of getting null values, you can tell Spark to fail fast'
+		>> val movies8 = spark.read.option("mode","failFast").schema(badMovieSchema).json("<path>/movies.json")
+	'// Spark will throw a RuntimeException when executing an action'
+		>> movies8.show(5)
+			ERROR Executor: Exception in task 0.0 in stage 3.0 (TID 3) java.lang.RuntimeException: Failed to parse a value for data type 			BooleanType (current token: VALUE_STRING).
+	//Creating DataFrames from JDBC:
+		'For Spark to connect to an RDBMS, it must have access to the JDBC driver JAR file at runtime. Therefore, you need to add the location of a JDBC driver to the Spark classpath.'
+		//Main Options for a JDBC Data Source - url, dbtable, driver
+		
+		>> val mysqlURL= "jdbc:mysql://localhost:3306/sakila"
+		>> val filmDF = spark.read.format("jdbc")
+						.option("driver", "com.mysql.jdbc.Driver")
+						.option("url", mysqlURL)
+						.option("dbtable", "film")
+						.option("user", "<username>")
+						.option("password","<password>")
+						.load()
+//Working with Structured Operations"
 
 
 	
