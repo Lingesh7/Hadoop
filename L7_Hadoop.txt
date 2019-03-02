@@ -565,16 +565,22 @@ LOCATION '/user/hduser/external/books_av/'
 TBLPROPERTIES ('avro.schema.url'='/tmp/books_av.avsc');
 
 #parquet file format:
---LOAD to HIVE EXTERNAL TABLE FROM Parquet File Format;
+--Parquet stores binary data in a column-oriented way, where the values of each column are organized so that they are all adjacent, 
+----enabling better compression
+
+#LOAD to HIVE EXTERNAL TABLE FROM Parquet File Format;
 CREATE EXTERNAL TABLE BOOKS_PQ(ISBN STRING,BOOKTITLE STRING,BOOKAUTHOR STRING,YEAR INT,PUBLISHER STRING)
 STORED AS PARQUET 
 LOCATION '/user/hduser/external/books_pq';
+--We cannot load text file directly into parquet table,
+--we should first create an alternate table to store the text file and use insert overwrite command to write the data in parquet format.
 ====================
 #Partitioning 
 
 #Static Partitioning
 set hive.exec.dynamic.partition=true
 set hive.exec.dynamic.partition.mode=strict
+set hive.mapred.mode=strict; <--the strict mode ensures that the queries on partitioned tables cannot execute without defining a WHERE clause.
 
 CREATE TABLE BOOKS_PART(ISBN STRING,BOOKTITLE STRING,BOOKAUTHOR STRING,YEAR INT,PUBLISHER STRING)
 PARTITIONED BY (YR INT) 
@@ -597,8 +603,9 @@ SELECT * FROM BOOKS WHERE YEAR=2004;
 MSCK REPAIR TABLE BOOKS_PART;
 OR 
 ALTER TABLE BOOKS_PART ADD PARTITION (YR=2004) LOCATION '/user/hduser/external/books_part/yr=2004';
-ALTER TABLE EMPLOYEE ADD PARTITION (year=2005) PARTITION (year=2006) PARTITION (year=2008) PARTITION (year=2009) PARTITION (year=2010);
 --also consider adding multiple partitions in single query
+ALTER TABLE EMPLOYEE ADD PARTITION (year=2005) PARTITION (year=2006) PARTITION (year=2008) PARTITION (year=2009) PARTITION (year=2010);
+
 ALTER TABLE db_bdpbase.Employee DROP IF EXISTS PARTITION (year=2008), PARTITION(year=2009), PARTITION(year=2010);
 ALTER TABLE db_bdpbase.Employee DROP IF EXISTS PARTITION(year>2010);
 --if the underlying hdfs f/s was deleted without droping the table partition -- we can refresh the metadata to reflect the current state by doing -- Drop the table (only in case of external table) - Recreate the table - Repair it (MSCK REPAIR TABLE table_name)
@@ -622,11 +629,23 @@ LOCATION '/user/hduser/external/book_xx';
 
 INSERT OVERWRITE TABLE BOOK_EX PARTITION(YEAR) SELECT * FROM BOOKS;
 
+#To insert the data, the dynamic partition columns must be specified in last among the columns in the
+--SELECT statement and in the same order in which they appear in the PARTITION() clause.
+
 #__hive_default_partition__ 
 --this gets create when we load data into partitioned table dynamically and partition column has a NULL value.
 --to check we can issue the query like below in where clause
 SELECT * FROM BOOK_EX WHERE YEAR="__HIVE_DEFAULT_PARTITION__";
 
+--Alter the table enable/disable protection to NO_DROP, which prevents a table from being dropped, 
+---or OFFLINE, which prevents data (not metadata) in a table from being queried:
+
+ALTER TABLE c_employee ENABLE NO_DROP;
+ALTER TABLE c_employee DISABLE NO_DROP;
+
+--We can stop a partition form being queried by using the ENABLE OFFLINE clause with ALTER TABLE statement.
+ALTER TABLE c_employee ENABLE OFFLINE;
+ALTER TABLE c_employee DISABLE OFFLINE;
 
 ====================
 #Bucketing 
@@ -677,11 +696,11 @@ DESC FORMATTED MOVIES MID; -> to fetch column stats info
 # col_name              data_type               min                     max                     num_nulls               distinct_count          avg_col_len                max_col_len             num_trues               num_falses              comment
 mid                     int                     1                       193886                  0                       96484                                                                                                                      from deserializer
 ====================
-#Indexing in Hive
+Indexing in Hive
 --whenever we perform a query on a table that has an index, there is no need for the query to scan all the rows in the table. Further, it checks the index first and then goes to the particular column and performs the operation.
 --An Index acts as a reference to the records
-Types - COMPACT Indexing -stores the pair of indexed column’s value and its blockid. 
-		 and BITMAP Index - stores the combination of indexed column value and list of rows as a bitmap
+Types - COMPACT Index -stores the pair of indexed column’s value and its blockid. 
+	  - BITMAP Index - stores the combination of indexed column value and list of rows as a bitmap
 #Creating Index
 CREATE INDEX index_name
 ON TABLE table_name (columns,....)
@@ -689,7 +708,7 @@ AS 'org.apache.hadoop.hive.ql.index.compact.CompactIndexHandler'  |  'BITMAP'  <
 WITH DEFERRED REBUILD;
 ALTER INDEX index_nam on table_name REBUILD;
 --We can have any number of indexes for a particular table and any type of indexes as well.
--- on the same column we can create both type of indexes on same column
+-- On the same column we can create both type of indexes on same column
 SHOW FORMATTED INDEX ON MOVIES; <-- list the no of indexes on the tables if exists
 --result
 idx_name                tab_name                col_names               idx_tab_name            idx_type                comment
@@ -704,6 +723,58 @@ When not to use index in hive:
 --Indexes are advised to build on the columns on which you frequently perform operations.
 --Building more number of indexes also degrade the performance of your query.
 --Type of index to be created should be identified prior to its creation (if your data requires bitmap you should not create compact).This leads to increase in time for executing your query.
+====================
+JOINS in hive:
+
+NORMAL JOIN:
+SELECT c.ID, c.NAME, o.AMOUNT, o.DATE FROM CUSTOMERS c LEFT|RIGHT|FULL OUTER JOIN ORDERS o ON (c.ID = o.CUSTOMER_ID);
+
+--Normal join works - each table goes into separate mappers and then to shuffle phase - then to reducer where as one mapper output is copied 
+|--in to memory and another mapper out is streamed to the reducer to perform join. So it is better to load the bigger table to stream and small 
+|---table to copied to memory. 
+STREAMTABLE HINT:
+ Select /*+ STREAMTABLE(a) */ a.key, a.value from a join b on a.key = b.key;
+--if table a is bigger we are telling hive to stram the table a whereas b copied to memory. Thus enabling optimization. Still stramtable hint uses reducer to perform joins.
+--By default the tables in the left is copied to memory and right side table goes to stream.
+
+MAP JOIN:
+
+--Map Side Join since one of the tables in the join is a small table and can be loaded into memory,
+|--So that a join could be performed within A MAPPER without using a Map/Reduce step.
+--Rightouter join and full outer join are not possible in MAPSIDE join.
+
+MAPJOIN HINT: 
+Select /*+ MAPJOIN(b) */ a.key, a.value from a join b on a.key = b.key <-- MAPJOIN(b) tells the hive to choose b to load in to memory.
+--make sure the parameter is set to true -- set hive.ignore.mapjoin.hint=true;
+
+--MAPJOIN creates a MAPRED LOCAL TASK is launched before the original join task and serializes the table in hint into an hashtable
+|--the hash table is then uploaded to HADOOP's DISTRIBUTED CACHE - hadoop will copy the hashtable to the local f/s to all the nodes executing the
+|---actual task before anytask for the job are executed on the node. HASHTABLE will be available locally to each mappers. Then the actual join
+|----performed on the mapper.
+
+AUTO JOIN:
+--Auto Join creates a conditional task to check which table in the join has largedataset based on it, Hive chooses table to placed in DC.
+
+--Parameters: 
+hive.auto.convert.join=true <-- def is true, if set automatically process all joins as mapside join if a table size is less than 25 MB.
+hive.mapjoin.smalltable.filesize=25000000 <-- def is 25MB this size limits the auto join, if we want to enable mapjoin automatically for tables are of size more than 25MB we can tune this paramater.
+hive.auto.convert.join.noconditionaltask=true <-- we can combine three or more map-side joins into a single map-side join if the size of the n-1 table is less than 10 MB.
+hive.auto.convert.join.noconditionaltask.size=10000000; <-- by def 10MBthis size limits the noconditionaltask parameter to work
+
+SMB (Sort-Merge-Bucketed) JOIN:
+--To perofrm  SMB join all the following criteria must be true
+---1. All join tables must be bucketized.
+----2. Number of buckets of the big table must be divisible by the number of buckets of each of the small table in your query.
+-----3. Bucket columns from the table and the join columns in your query must be the one and the same.
+------4. Following properties must be set
+set hive.auto.convert.sortmerge.join=true;
+set hive.optimize.bucketmapjoin = true;
+set hive.optimize.bucketmapjoin.sortedmerge = true;
+set hive.auto.convert.sortmerge.join.noconditionaltask=true;
+
+#Big table will result in 10 mappers if the no of bucket is 10. 
+--only matching bucket of all small tables are replicated on to each mapper and then the join will takes place on each mapper. 
+--Since the records are already sorted an only matching buckets are joined - this task requires no reducers and completes faster.
 
 =============================================================================
 PIG:
@@ -744,8 +815,8 @@ server.3=dn2:2888:3888
 in dn1 --> sudo mkdir /usr/local/zookeeper; sudo chown -R hduser:hadoop /usr/local/zookeeper
 in dn2 --> sudo mkdir /usr/local/zookeeper; sudo chown -R hduser:hadoop /usr/local/zookeeper
 
-scp -r /usr/local/zookeeper/* hduser@dn1:/usr/local/zookeeper
-scp -r /usr/local/zookeeper/* hduser@dn2:/usr/local/zookeeper
+scp -r /usr/local/zookeeper/\* hduser@dn1:/usr/local/zookeeper
+scp -r /usr/local/zookeeper/\* hduser@dn2:/usr/local/zookeeper
 
 if you have two servers (SERVER1 and SERVER2) for which you have created "myid" files in dataDir for zookeeper as below
 
@@ -839,8 +910,8 @@ scp -r ~/.bashrc hduser@dn2:/home/hduser
 
 sudo mkdir /usr/local/hbase/  && sudo chown -R hduser:hadoop /usr/local/hbase --> in dn1 and dn2
 
-scp -r /usr/local/hbase/* hduser@dn1:/usr/local/hbase
-scp -r /usr/local/hbase/* hduser@dn2:/usr/local/hbase
+scp -r /usr/local/hbase/\* hduser@dn1:/usr/local/hbase
+scp -r /usr/local/hbase/\* hduser@dn2:/usr/local/hbase
 
 start-hbase.sh
 >list --> to list tables
@@ -854,7 +925,7 @@ start-hbase.sh
 
 >delete 'Patient1','002','Personal:pname' --> delete a specific column from rowkey
 >deleteall 'Patient1','001' --> delete entire rowkey details
->alter 'custmaster',{NAME=>'insurancehive',METHOD=>'delete}
+>alter 'custmaster',{NAME=>'insurancehive',METHOD=>'delete'}
 
 *****Error and SOlution*****
 1. The following error appears in /usr/local/hbase/logs/hbase-hduser-master-master.log
@@ -949,7 +1020,7 @@ Meta store corrupted because the underlying file/blocks in HDFS corrupted. Eithe
 	>[zk: localhost:2181(CONNECTED) 0] ls /
 	>[zookeeper, hbase]
 	>[zk: localhost:2181(CONNECTED) 1] rmr hbase /
-	>Command failed: java.lang.IllegalArgumentException: Path must start with / char                                                   acter
+	>Command failed: java.lang.IllegalArgumentException: Path must start with / character
 	>[zk: localhost:2181(CONNECTED) 2] rmr /hbase /
 	>[zk: localhost:2181(CONNECTED) 3] ls /
 	>[zookeeper]
@@ -996,7 +1067,7 @@ Try to run hadoop fsck / to find out the corrupted files and repair
 	 Total symlinks:                0
 	 Total blocks (validated):      125 (avg. block size 33863 B)
 	  ********************************
-	  UNDER MIN REPL'D BLOCKS:      3 (2.4 %)
+	  UNDER MIN REPLICAED BLOCKS:      3 (2.4 %)
 	  dfs.namenode.replication.min: 1
 	  CORRUPT FILES:        3
 	  MISSING BLOCKS:       3
@@ -1065,6 +1136,11 @@ export PATH=$PATH:$SCALA_HOME/bin
 
 scala -version --> to verify 
 
+val -- declare a immutable variable
+var -- declare a mutable variable. the variable can be reassigned
+lazy val -- the value to the variable will not assigned until it is being called. same as lazy evaluation 
+		 |--use to save memory to declared prior 
+
 
 object MyFuncs {
 	def sum(func: Int => Int, lb: Int, ub: Int)  = {
@@ -1101,6 +1177,13 @@ f: List[Int] = List(1, 4, 9, 16, 25)
 scala> val m = f.reduce((x,y) => x+y)
 m: Int = 55
 
+functions:
+
+MONAD  -->https://medium.com/@sinisalouc/demystifying-the-monad-in-scala-cc716bb6f534
+option
+trait
+:+
+
 ===============================================================
 SPARK:
 
@@ -1134,14 +1217,14 @@ vi /usr/local/hadoop/etc/hadoop/yarn-site.xml
 </property> 
 
 
-hadoop fs -put /usr/local/spark/jars/* /user/spark/share/lib/
+hadoop fs -put /usr/local/spark/jars/* /user/spark/share/lib/     -- */
 
 spark.yarn.memory=256m
 spark.driver.memory=25m
 spark.driver.cores=1
 spark.executor.cores=1
 spark.executor.memory=256m
-spark.yarn.jars=hdfs://master:54310/user/spark/share/lib/*.jar
+spark.yarn.jars=hdfs://master:54310/user/spark/share/lib/*.jar      ---- */
 
 spark-shell --verbose --master yarn --driver-memory 512m --num-executors 1 --executor-cores 2 --executor-memory 512m
 
@@ -1278,17 +1361,13 @@ val rdd = sc.textFile("home/data/keywords.txt", 3)
 		val fieldRdd = splitRdd.map(f => (f(1),f(3).toInt)).sortByKey(false) <- false represents that the data to be sorted in desc order
 		fieldRdd.foreach(println)
 	
-	#countByKey - For a given pair RDD, this action ignores the value of each row and reports only the number of values with the same key for each key to the driver.
-		val candyTx = sc.parallelize(List(("candy1", 5.2), ("candy2", 3.5),("candy1", 2.0), ("candy3", 6.0)))
-		candyTx.countByKey()
-		scala.collection.Map[String,Long] = Map(candy1 -> 2, candy2 -> 1, candy3 -> 1)
-		
+	#
 	
 Refer ( https://data-flair.training/blogs/apache-spark-rdd-persistence-caching/ ) 
 
 //Lineage -  RDD lineage is nothing but the graph of all the parent RDDs of an RDD. it creates a logical execution plan.
 			To view the lineage, use toDebugString
-		scala> rdd.toDebugString
+		>> rdd.toDebugString
 		
 //DAG - Direct Acylic Graph: Phy exec plan.  When an action is called on the RDD, Spark creates the DAG and submits the DAG to the DAG scheduler.
 		1. The DAG scheduler divides operators such as map, flatMap, and so on, into stages of tasks.
@@ -1302,21 +1381,18 @@ Refer ( https://data-flair.training/blogs/apache-spark-rdd-persistence-caching/ 
 		• Wide transformation: The operators that require the data to be shuffled are grouped together as a stage.
 			An example is reduceByKey
 
-
-
 //Persisting RDD:  Persisting an RDD stores the computation result in memory and reuses it in other actions on that data set. 
 	#cache() - Uses the default storage level is StorageLevel.MEMORY_ONLY -> RDD is stored as deserialized Java object in the JVM. If the size of RDD is 
 			greater than memory, It will not cache some partition and recompute them next time whenever needed. 
 			
 	#persist() - we can use various storage levels in this method as follows 
 		MEMORY_AND_DISK -> When the size of RDD is greater than the size of memory, it stores the excess partition on the disk, and retrieve from disk whenever required,
-		MEMORY_ONLY_SER, MEMORY_AND_DISK_SER - The serialization option determines whether the data in the RDD should be stored as a serialized object or not.
-		DISK_ONLY
+		MEMORY_ONLY_SER, MEMORY_AND_DISK_SER, DISK_ONLY
 		
 		val units = words.map ( word => (word, 1) ).persist(StorageLevel.MEMORY_ONLY) or
 		val units = words.map ( word => (word, 1) ).cache
 	
-	#unpersist() - Spark will use the LRU (least recently used) eviction policy to automatically evict the RDDs that have not been recently accessed.
+	#unpersist() - Spark monitor the cache of each node automatically and drop out the old data partition in the LRU (least recently used) fashion.
 					We can also remove the cache manually using RDD.unpersist() method.
 					
 					
@@ -1441,17 +1517,3 @@ Refer ( https://data-flair.training/blogs/apache-spark-rdd-persistence-caching/ 
 						.option("password","<password>")
 						.load()
 //Working with Structured Operations"
-
-
-	
-
-https://spoddutur.github.io/spark-notes/distribution_of_executors_cores_and_memory_for_spark_application.html
-https://stackoverflow.com/questions/37871194/how-to-tune-spark-executor-number-cores-and-executor-memory
-http://site.clairvoyantsoft.com/understanding-resource-allocation-configurations-spark-application/
-https://data-flair.training/forums/topic/by-default-how-many-partitions-are-created-in-rdd-in-apache-spark/
-Spark examples: http://www.javachain.com/import-teradata-using-spark-into-hadoop/
-Kafka
-======
-https://medium.com/@durgaswaroop/a-practical-introduction-to-kafka-storage-internals-d5b544f6925f
-
-http://apachesparkbook.blogspot.com/search/label/a54%7C%20collectAsMap%28%29 --> mini basics
