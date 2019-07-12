@@ -1240,57 +1240,57 @@ spark -version
 
 //Initialize in REPL/IDE where already spark context available ready
 
-spark-shell --verbose --master yarn --driver-memory 512m --num-executors 1 --executor-cores 2 --executor-memory 512m
+	spark-shell --verbose --master yarn --driver-memory 512m --num-executors 1 --executor-cores 2 --executor-memory 512m
 
 //Initialize programatically - v1.6
-import org.apache.spark.{SparkConf, SparkContext}
-val conf = new SparkConf().setAppName("anyName").setMaster("yarn")
-val sc = new SparkContext(conf)
+	import org.apache.spark.{SparkConf, SparkContext}
+	val conf = new SparkConf().setAppName("anyName").setMaster("yarn")
+	val sc = new SparkContext(conf)
 
 //To create SqlContext 
-scala> import org.apache.spark.sql
-scala> val sqlc = new org.apache.spark.sql.SQLContext(sc)
-sqlc: org.apache.spark.sql.SQLContext = org.apache.spark.sql.SQLContext@614c7175
+	scala> import org.apache.spark.sql
+	scala> val sqlc = new org.apache.spark.sql.SQLContext(sc)
+	sqlc: org.apache.spark.sql.SQLContext = org.apache.spark.sql.SQLContext@614c7175
 
 //To list the environment details of spark which is already running 
-sc.getConf.getAll
-sc.getConf.getAll.foreach(println)
+	sc.getConf.getAll
+	sc.getConf.getAll.foreach(println)
 
 //RDD (resilient distributed datasets) -- RDD is an immutable collection of distributed objects/elements partitioned across the nodes of clusters and operated on in parallel. Features are immutable, inmemory computation, lazy evaluations, Fault tolerance,  Partitioning. 
 
 //RDD operation: Transformations - Creating a new RDD from an existing RDD is known as transformation. Ex: map, flatMap
-			Actions - all the transformations are triggered only when an action is called. Ex: sum, count.
+		Actions - all the transformations are triggered only when an action is called. Ex: sum, count.
 		
 //RDD Creation: 
-//Using parallized collection - it can be created by applying parallelize method on an existing collection.
-val data = Array(1,2,3,4,5)
-val rddData = sc.parallelize(data)
-rddData.collect() 
+	'Using parallized collection' - it can be created by applying parallelize method on an existing collection.
+		val data = Array(1,2,3,4,5)
+		val rddData = sc.parallelize(data)
+		rddData.collect() 
 
-//Using External Sources - Use textFile() of SparkContext.
-val rdd = sc.textFile("hdfs://localhost:9000/data/keywords.txt")
+	'Using External Sources' - Use textFile() of SparkContext.
+		val rdd = sc.textFile("hdfs://localhost:9000/data/keywords.txt")
 
-//Read data from HDFS - it creates a RDD
-scala> val orders = sc.textFile("/user/hduser/retail_db/orders")
-	orders: org.apache.spark.rdd.RDD[String] = /user/hduser/retail_db/orders MapPartitionsRDD[27] at textFile at <console>:25
+	'Read data from HDFS' - it creates a RDD
+		scala> val orders = sc.textFile("/user/hduser/retail_db/orders")
+			orders: org.apache.spark.rdd.RDD[String] = /user/hduser/retail_db/orders MapPartitionsRDD[27] at textFile at <console>:25
 
-// Read data from Linux FS 
-scala> val ordersRaw = scala.io.Source.fromFile("/home/hduser/retail_db/orders") <-- Itenory type - to change this to RDD use parallelize method.
-scala> val ordersRDD = sc.parallelize(ordersRaw)
-		
-//Creating an RDD with file Partitioning:  By default, it divides data into two partitions also the # of partitions is equal to the # of CPU cores available in the cluster, but the number of partitions can be specified while creating an RDD.
-val rdd = sc.textFile("home/data/keywords.txt", 3)
+	'Read data from Linux FS' 
+		scala> val ordersRaw = scala.io.Source.fromFile("/home/hduser/retail_db/orders") <-- Itenory type - to change this to RDD use parallelize method.
+		scala> val ordersRDD = sc.parallelize(ordersRaw)
+				
+	'Creating an RDD with file Partitioning':  By default, it divides data into two partitions also the num of partitions is equal to the num of CPU cores available in the cluster, but the number of partitions can be specified while creating an RDD.
+		val rdd = sc.textFile("home/data/keywords.txt", 3)
 
 //Transformations - RowLevel Transformation
 
-	#mapfunc- acts on one element and produces one element. Returns a new data set by operating on each element of the source RDD.
+	'map'- acts on one element and produces one element. Returns a new data set by operating on each element of the source RDD.
 		MAP o/p is of type - org.apache.spark.rdd.RDD[Array[String]] = MapPartitionsRDD[8]
 
 		val orderDate = orders.map(mm => {
      	| (mm.split(",")(1).substring(0, 10).replace("-", "").toInt, mm.split(",")(0).toInt)
      	| })
 
-   	#flatmap - acts on one element and produces 0 or 1 or more elements and it flattens list of lists into a single list
+   	'flatmap' - acts on one element and produces 0 or 1 or more elements and it flattens list of lists into a single list
      	 	flatmap o/p is of type -   org.apache.spark.rdd.RDD[String] = MapPartitionsRDD[9] at flatMap
 		val l = List("Hello", "How are you doing", "Let us perform copy","dont copy", "as part of count program","how is everything")
 		val lst = List("Hello,Hello", "Hello,Hello")
@@ -1298,12 +1298,12 @@ val rdd = sc.textFile("home/data/keywords.txt", 3)
 		val lstFm = lstRdd.flatMap(mm => mm.split(","))
 		val wc = lstFm.map(mm => (mm, 1)).countByKey
 
-	#filter -  Returns a new RDD that contains only elements that satisfy the condition.
+	'filter' -  Returns a new RDD that contains only elements that satisfy the condition.
 		val rdd = sc.textFile("/home/data/keywords.txt")
 		val filterRdd = rdd.filter(line => line.contains("Kafka"))
 		filterRdd.collect()
 		
-	#joinfunc - Join needs a paired RDD to join two dataset. key value (primarykey) should be similar
+	'joinfunc' - Join needs a paired RDD to join two dataset. key value (primarykey) should be similar
 
 		val joi = sc.textFile("/user/hduser/retail_db/order_items")
 		val ordersMap = jo.map(mm => (mm.split(",")(0).toInt, mm.split(",")(1).substring(0,10)))
@@ -1311,7 +1311,7 @@ val rdd = sc.textFile("home/data/keywords.txt", 3)
 		val join = ordersMap.join(orderItemMap)
 		join.take(10).foreach(println)
 
-	#leftouterjoin
+	'leftouterjoin'
 		val leftOuterJoin = ordersMap.leftOuterJoin(orderItemMap)
 		val leftouterjoinfilter = leftOuterJoin.filter( mm => mm._2._2 == None)
 		val final = leftouterjoinfilter.map(mm => mm._2._1)
@@ -1319,88 +1319,88 @@ val rdd = sc.textFile("home/data/keywords.txt", 3)
 	
 //Actions: Action returns values to the driver program.
 
-	#reduce(func) - returns a data set by aggregating the elementsof the data set using a function func. 
+	'reduce(func)' - returns a data set by aggregating the elementsof the data set using a function func. 
 			The function takes two arguments and returns a single argument.
 		val rdd = sc.parallelize(1 to 5) 
 		val sumRdd = rdd.reduce((t1,t2) => t1 + t2)
 		
-	#collect() - All the elements of the data set are returned as an array to the driver program. Collect will convert the distributed RDD in to a single threaded collection. Collect will attempt to copy every single element in the RDD onto the single driver program, and then run out of memory and crash. use take() or takeSample() api as collect will cause memory realated issue as collect api uses heavy memory.
+	'collect()' - All the elements of the data set are returned as an array to the driver program. Collect will convert the distributed RDD in to a single threaded collection. Collect will attempt to copy every single element in the RDD onto the single driver program, and then run out of memory and crash. use take() or takeSample() api as collect will cause memory realated issue as collect api uses heavy memory.
 	
-	#count() - This returns the number of elements in the data set.
+	'count()' - This returns the number of elements in the data set.
 	
-	#first() -  This returns the first element in the data set.
+	'first()' -  This returns the first element in the data set.
 	
-	#take(n) - This returns the first n elements in the data set as an array.
+	'take(n)' - This returns the first n elements in the data set as an array.
 	
-	#saveAsTextFile(path) - Write the elements of the RDD as a text file in the local file system, HDFS, or another storage system.
+	'saveAsTextFile(path)' - Write the elements of the RDD as a text file in the local file system, HDFS, or another storage system.
 	
-	#foreach - If we apply foreach directly on RDD - it will not return anything. Because spark api's will be executed in worker nodes where the apis we are performing on the arrays will be excuted in current session/machine where we running it.
+	'foreach' - If we apply foreach directly on RDD - it will not return anything. Because spark apis will be executed in worker nodes where the apis we are performing on the arrays will be excuted in current session/machine where we running it.
 
 //Paired RDDs: Each element in the pair RDDs is represented as a key/value pair. Pair RDDs are useful for sorting, grouping.
 
-	#groupByKey - doesn't take any arguments to be passed, doesnot use combiner 
+	'groupByKey' - doesnt take any arguments to be passed, doesnot use combiner 
 			In groupByKey(), all the key-value pairs are shuffled around. This is a lot of unnecessary data to being transferred over the network.
-		val words = Array("one", "two", "two", "three", "three", "three")
-		val wordPairsRDD = sc.parallelize(words).map(word => (word, 1))
-		val wordCountsWithGroup = wordPairsRDD
-		.groupByKey()
-		.map(t => (t._1, t._2.sum))
-		.collect()
+		>> val words = Array("one", "two", "two", "three", "three", "three")
+		>> val wordPairsRDD = sc.parallelize(words).map(word => (word, 1))
+		>> val wordCountsWithGroup = wordPairsRDD
+			.groupByKey()
+			.map(t => (t._1, t._2.sum))
+			.collect()
 		
-	#reduceByKey - works much better on a large dataset. That's because Spark knows it can combine output with a common key on each partition before shuffling the data. pairs on the same machine with the same key are combined (by using the lamdba function passed into reduceByKey) before the data is shuffled. Then the lamdba function is called again to reduce all the values from each partition to produce one final result
-		val words = Array("one", "two", "two", "three", "three", "three")
-		val wordPairsRDD = sc.parallelize(words).map(word => (word, 1))
-		val wordCountsWithReduce = wordPairsRDD
-		.reduceByKey(_ + _)
-		.collect()
+	'reduceByKey' - works much better on a large dataset. Thats because Spark knows it can combine output with a common key on each partition before shuffling the data. pairs on the same machine with the same key are combined (by using the lamdba function passed into reduceByKey) before the data is shuffled. Then the lamdba function is called again to reduce all the values from each partition to produce one final result
+		>> val words = Array("one", "two", "two", "three", "three", "three")
+		>> val wordPairsRDD = sc.parallelize(words).map(word => (word, 1))
+		>> val wordCountsWithReduce = wordPairsRDD
+			.reduceByKey(_ + _)
+			.collect()
 	
-	#combineByKey - It can be used when you are combining elements but your return type differs from your input value type.
+	'combineByKey' - It can be used when you are combining elements but your return type differs from your input value type.
 	
-	#sortByKey() - applied on a data set of (K, V) pairs, it returns a data set of (K, V) pairs where keys are sorted in ascending or descending order as specified in the boolean ascending argument. 
-		val rdd = sc.textFile("/home/data/people.csv")
-		val splitRdd = rdd.filter(line => !line.contains("year")).map(line => line.split(","))
-		val fieldRdd = splitRdd.map(f => (f(1),f(3).toInt)).sortByKey(false) <- false represents that the data to be sorted in desc order
-		fieldRdd.foreach(println)
+	'sortByKey()' - applied on a data set of (K, V) pairs, it returns a data set of (K, V) pairs where keys are sorted in ascending or descending order as specified in the boolean ascending argument. 
+		>> val rdd = sc.textFile("/home/data/people.csv")
+		>> val splitRdd = rdd.filter(line => !line.contains("year")).map(line => line.split(","))
+		>> val fieldRdd = splitRdd.map(f => (f(1),f(3).toInt)).sortByKey(false) <-# false represents that the data to be sorted in desc order
+		>> fieldRdd.foreach(println)
 	
 	#
 	
-Refer ( https://data-flair.training/blogs/apache-spark-rdd-persistence-caching/ ) 
-
 //Lineage -  RDD lineage is nothing but the graph of all the parent RDDs of an RDD. it creates a logical execution plan.
 			To view the lineage, use toDebugString
 		>> rdd.toDebugString
 		
-//DAG - 'Direct Acylic Graph: Phy exec plan.  When an action is called on the RDD, Spark creates the DAG and submits the DAG to the DAG scheduler.
+//DAG - 'Direct Acylic Graph': Phy exec plan.  When an action is called on the RDD, Spark creates the DAG and submits the DAG to the DAG scheduler.
 		1. The DAG scheduler divides operators such as map, flatMap, and so on, into stages of tasks.
 		2. The result of a DAG scheduler is a set of stages.
 		3. The stages are passed on to the Task Scheduler.
 		4. The Task Scheduler launches tasks via Cluster Manager.
-		5. The worker executes the tasks.'
+		5. The worker executes the tasks.
 	At a high level, Spark applies two transformations to create a DAG. The two transformations are as follows:
 		• 'Narrow transformation:' The operators that don’t require the data to be shuffled across the partitions are grouped together as a stage.
 			Examples are map, filter, and so on.
 		• 'Wide transformation:' The operators that require the data to be shuffled are grouped together as a stage. An example is reduceByKey
 
 //Persisting RDD:  Persisting an RDD stores the computation result in memory and reuses it in other actions on that data set. 
-	#cache() - Uses the default storage level is StorageLevel.MEMORY_ONLY -> RDD is stored as deserialized Java object in the JVM. If the size of RDD is 			greater than memory, It will not cache some partition and recompute them next time whenever needed. 
+	'cache()' - Uses the default storage level is StorageLevel.MEMORY_ONLY -> RDD is stored as deserialized Java object in the JVM. If the size of RDD is 			greater than memory, It will not cache some partition and recompute them next time whenever needed. 
 			
-	#persist() - we can use various storage levels in this method as follows 
-		MEMORY_AND_DISK -> 'When the size of RDD is greater than the size of memory, it stores the excess partition on the disk, and retrieve from disk whenever required',
-		MEMORY_ONLY_SER, MEMORY_AND_DISK_SER, DISK_ONLY
+	'persist()' - we can use various storage levels in this method as follows 
+		1. MEMORY_AND_DISK -> 'When the size of RDD is greater than the size of memory, it stores the excess partition on the disk, and retrieve from disk whenever required',
+		2. MEMORY_ONLY_SER, 3. MEMORY_AND_DISK_SER, 4. DISK_ONLY
 		
 		>> val units = words.map ( word => (word, 1) ).persist(StorageLevel.MEMORY_ONLY) or
 		>> val units = words.map ( word => (word, 1) ).cache
 	
-	#unpersist() - Spark monitor the cache of each node automatically and drop out the old data partition in the LRU (least recently used) fashion.
+	'unpersist()' - Spark monitor the cache of each node automatically and drop out the old data partition in the LRU (least recently used) fashion.
 					We can also remove the cache manually using RDD.unpersist() method.
-					
-					
+
+	#Refer ( https://data-flair.training/blogs/apache-spark-rdd-persistence-caching/ ) 
+
 #######################
+
 //SparkSQL - The Spark SQL module consists of DataFrames and Datasets and Catalyst Optimizer.
 	
 //DataFrame - A DataFrame is an immutable, distributed collection of data that is organized into rows, where each one consists set of columns which has name and type. In other words, this distributed collection of data has a structure defined by a schema. 
 
-//Creating DataFrames
+//Creating DataFrames:
 	//Creating DataFrames from RDDs: 
 		"To use toDF function we need to import implicit modules" . 
 		IMPLICITS - Used for converting Scala objects (incl. RDDs) into a Dataset, DataFrame, Columns or supporting such conversions. implicits object is defined inside SparkSession and hence requires that you build a SparkSession instance first before importing implicits conversions.
@@ -1471,11 +1471,51 @@ Refer ( https://data-flair.training/blogs/apache-spark-rdd-persistence-caching/ 
 		+--+-----------+---+
 		
 	//Creating DataFrames from Data Sources:
-		General format - >> spark.read.format(...).option("key", "value").schema(...).load()
-	#txt file 
-		>> val textFile = spark.read.text("README.md")
-		>> textFile.show(5, false)  //show 5 lines and dont truncate
-	#CSV format
+		General format - >> spark.read.format(...).option("key", "value").schema(...).load()   #v2.x
+
+	'text file' #reading data from text file separated by | symbol and creating DF on it. Considering the 3rd column is Integer (total 4 columns).
+		>> val rawInput = sc.textFile("text.txt")
+
+		>> val df1= rawInput.map(x => x.split("|")).map( x=> (x(0),x(1),x(2).toInt,x(3)) ).toDF("tbl_nm", "plnt_nm", "pk_nm", "log")
+		 
+		>> val df2 = rawInput.map(mm => mm.split("|")).map {case Array(a,b,c,d) => (a,b,c.toInt,d)}.toDF("tbl_nm","plnt_nm","pk_nm","log")
+		 
+		>> case class Schema(tbl_nm: String, plnt_nm: string, pk_nm: Int, log: string)
+		>> val df3= rawInput.map(x => x.split("|")).map( x=> Schema(x(0),x(1),x(2),x(3)) ).toDF()
+		 
+		>> import org.apache.spark.sql.types.{StructType,StructField,StringType}
+		>> val schema = StructType(Array(
+		 				StructField("id", LongType, true),
+		 				StructField("name", StringType, true),
+		 				StructField("age", LongType, true) ))
+		>> val df4 = spark.createDataFrame(rawInput, schema)
+		
+		>> df4.printSchema
+		 
+		We use registerTempTable or CreateOrReplaceTempView/createGlobalTempView (Spark > = 2.0) on our spark Dataframe.
+		 	CreateorReplaceTempView is used when you want to store the table for a particular spark session and 
+		 	createGlobalTempView is used when you want to share the temp table across multiple spark sessions.
+		
+		>> df1.registerTempTable("SampleTable")
+		>> 
+		>> sqlContext.sql("select count(1) from SampleTable").show
+		>> 
+		>> Inspect RDD Partitions Programatically
+		>> In the Scala API, an RDD holds a reference to its Array of partitions, which you can use to find out how many partitions there are:
+		>> 
+		>> scala> val someRDD = sc.parallelize(1 to 100, 30)
+		>> someRDD: org.apache.spark.rdd.RDD[Int] = ParallelCollectionRDD[0] at parallelize at <console>:12
+		>> 
+		>> scala> someRDD.partitions.size
+		>> res0: Int = 30
+		>> In the python API, there is a method for explicitly listing the number of partitions:
+		>> 
+		>> In [1]: someRDD = sc.parallelize(range(101),30)
+		>> 
+		>> In [2]: someRDD.getNumPartitions()
+		>> Out[2]: 30
+
+	'CSV format'
 		>> import org.apache.spark.sql.types._
 		>> val movieSchema = new StructType()
 						.add("actor",SringType,true)
@@ -1483,24 +1523,27 @@ Refer ( https://data-flair.training/blogs/apache-spark-rdd-persistence-caching/ 
 						.add("year",IntegerType,true)
 		>> val movies4 = spark.read.option("header","true").option("sep", "\t").option("mode", "PERMISSIVE").schema(movieSchema).csv("<path>/movies.csv")
 		
-	'inferSchema option -  specifies whether Spark should try to infer the column type based on column value. Or we can define user-specified-schema using StructType and StructField & specify in schema option as above line. If the inferSchema option is false and no schema is provided, Spark will assume the data type of all the columns to be the string type.'
+		'inferSchema' option -  specifies whether Spark should try to infer the column type based on column value. Or we can define user-specified-schema using StructType and StructField & specify in schema option as above line. If the inferSchema option is false and no schema is provided, Spark will assume the data type of all the columns to be the string type.
 		
 	//Verify correctness of the data:
 		'PERMISSIVE (default): nulls are inserted for fields that could not be parsed correctly.'
 			We can add a special column _corrupt_record, which does not exist in the data. This column captures rows that did not parse correctly. To Query which rows not parsed correctly we can use the below codes:
 				>> spark.read.schema(schema).csv(file).filter($"_corrupt_record".isNotNull).count()
 				>> spark.read.schema(schema).csv(file).select("_corrupt_record").show()
-		'DROPMALFORMED: drops lines that contain fields that could not be parsed'
-		'FAILFAST: aborts the reading if any malformed data is found'
+		'DROPMALFORMED': drops lines that contain fields that could not be parsed
+		'FAILFAST': aborts the reading if any malformed data is found
 			
-	#JSON file
+	'JSON file'
 		>> val orders = sqlContext.load("/user/hduser/retail_db_json/orders", "json")
 			orders: org.apache.spark.sql.DataFrame = [order_customer_id: bigint, order_date: string ... 2 more fields]
+
 	// JSON Common Options -> allowComments, multiLine, samplingRatio  	
 		>> val movies5 = spark.read.option("multiLine","true").option("inferSchema","true").schema(movieSchema2).json("<path>/movies.json")  //specify a schema to override the Sparks inferring schema.
-	'When a column data type specified in the schema doesn’t match up with the value in the JSON file?, it will set the value of all the columns in that row to null. Instead of getting null values, you can tell Spark to fail fast'
+		'When a column data type specified in the schema doesn’t match up with the value in the JSON file?, it will set the value of all the columns in that row to null. Instead of getting null values, you can tell Spark to fail fast'
+		
 		>> val movies8 = spark.read.option("mode","failFast").schema(badMovieSchema).json("<path>/movies.json")
-	'// Spark will throw a RuntimeException when executing an action'
+	  Spark will throw a RuntimeException when executing an action
+		
 		>> movies8.show(5)
 			ERROR Executor: Exception in task 0.0 in stage 3.0 (TID 3) java.lang.RuntimeException: Failed to parse a value for data type BooleanType (current token: VALUE_STRING).
 
@@ -1550,8 +1593,6 @@ Refer ( https://data-flair.training/blogs/apache-spark-rdd-persistence-caching/ 
 			>> myRDD.count
 
 
-
-
 //Working with Structured Operations"
 
 
@@ -1565,3 +1606,7 @@ Kafka
 https://medium.com/@durgaswaroop/a-practical-introduction-to-kafka-storage-internals-d5b544f6925f
 
 http://apachesparkbook.blogspot.com/search/label/a54%7C%20collectAsMap%28%29 --> mini basics
+=====
+partition and shuffle in spark
+https://medium.com/parrot-prediction/partitioning-in-apache-spark-8134ad840b0
+https://medium.com/@manuelmourato25/how-spark-dataframe-shuffling-can-hurt-your-partitioning-28d05fdcb6fa
