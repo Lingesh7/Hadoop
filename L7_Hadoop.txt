@@ -506,6 +506,7 @@ hive -hiveconf hive.root.logger=DEBUG,console
 
 set hive.cli.print.header=true; 
 
+---------------------------------------------------------------
 Practice:
 
 CREATE DATABASE BOOKSDB;
@@ -577,209 +578,225 @@ LOCATION '/user/hduser/external/books_pq';
 --We cannot load text file directly into parquet table,
 --we should first create an alternate table to store the text file and use insert overwrite command to write the data in parquet format.
 ====================
-#Partitioning 
+`Partitioning`
 
-#Static Partitioning
-set hive.exec.dynamic.partition=true
-set hive.exec.dynamic.partition.mode=strict
-set hive.mapred.mode=strict; <--the strict mode ensures that the queries on partitioned tables cannot execute without defining a WHERE clause.
+'Static Partitioning'
+	set hive.exec.dynamic.partition=true
+	set hive.exec.dynamic.partition.mode=strict
+	set hive.mapred.mode=strict; <--the strict mode ensures that the queries on partitioned tables cannot execute without defining a WHERE clause.
 
-CREATE TABLE BOOKS_PART(ISBN STRING,BOOKTITLE STRING,BOOKAUTHOR STRING,YEAR INT,PUBLISHER STRING)
-PARTITIONED BY (YR INT) 
-ROW FORMAT DELIMITED
-FIELDS TERMINATED BY '~'
-STORED AS TEXTFILE;
+	CREATE TABLE BOOKS_PART(ISBN STRING,BOOKTITLE STRING,BOOKAUTHOR STRING,YEAR INT,PUBLISHER STRING)
+	PARTITIONED BY (YR INT) 
+	ROW FORMAT DELIMITED
+	FIELDS TERMINATED BY '~'
+	STORED AS TEXTFILE;
+	
+	INSERT INTO TABLE BOOKS_PART PARTITION (YR=1997) SELECT * FROM BOOKS WHERE YEAR=1997;
+	
+	SHOW PARTITIONS BOOKS_PART; <-- this will show the no of partitions available on the table
 
-INSERT INTO TABLE BOOKS_PART PARTITION (YR=1997) SELECT * FROM BOOKS WHERE YEAR=1997;
+	Manually create a part of data from hive to hdfs as below -- Export hive data into file
+		INSERT OVERWRITE DIRECTORY '/user/hduser/external/books_part/yr=2004' 
+		ROW FORMAT DELIMITED 
+		FIELDS TERMINATED BY '~' 
+		SELECT * FROM BOOKS WHERE YEAR=2004;
 
-SHOW PARTITIONS BOOKS_PART; <- #this will show the no of partitions available on the table
+	move the o/p of above path to the location of the partitioned table & do an MSCK to automatically invoke the new partitions.
 
---manually create a part of data from hive to hdfs as below -- Export hive data into file
-INSERT OVERWRITE DIRECTORY '/user/hduser/external/books_part/yr=2004' 
-ROW FORMAT DELIMITED 
-FIELDS TERMINATED BY '~' 
-SELECT * FROM BOOKS WHERE YEAR=2004;
---move the o/p of above path to the location of the partitioned table and do an MSCK to automatically invoke the new partitions.
+	'MSCK REPAIR' doesnt remove partitions if the corresponding folder on HDFS was manually deleted,  it will add any partitions that exist on HDFS but not in metastore to the metastore.
 
-#MSCK REPAIR doesn't remove partitions if the corresponding folder on HDFS was manually deleted,  it will add any partitions that exist on HDFS but not in metastore to the metastore.
-MSCK REPAIR TABLE BOOKS_PART;
-OR 
-ALTER TABLE BOOKS_PART ADD PARTITION (YR=2004) LOCATION '/user/hduser/external/books_part/yr=2004';
---also consider adding multiple partitions in single query
-ALTER TABLE EMPLOYEE ADD PARTITION (year=2005) PARTITION (year=2006) PARTITION (year=2008) PARTITION (year=2009) PARTITION (year=2010);
+		MSCK REPAIR TABLE BOOKS_PART;
+		OR 
+		ALTER TABLE BOOKS_PART ADD PARTITION (YR=2004) LOCATION '/user/hduser/external/books_part/yr=2004';
 
-ALTER TABLE db_bdpbase.Employee DROP IF EXISTS PARTITION (year=2008), PARTITION(year=2009), PARTITION(year=2010);
-ALTER TABLE db_bdpbase.Employee DROP IF EXISTS PARTITION(year>2010);
---if the underlying hdfs f/s was deleted without droping the table partition -- we can refresh the metadata to reflect the current state by doing -- Drop the table (only in case of external table) - Recreate the table - Repair it (MSCK REPAIR TABLE table_name)
---We can “statically” add a partition in the table and move the file into the partition of the table
---We can alter the partition in the static partition
+	'Adding multiple partitions in single query'
+		ALTER TABLE EMPLOYEE ADD PARTITION (year=2005) PARTITION (year=2006) PARTITION (year=2008) PARTITION (year=2009) PARTITION (year=2010);
+		ALTER TABLE db_bdpbase.Employee DROP IF EXISTS PARTITION (year=2008), PARTITION(year=2009), PARTITION(year=2010);
+		ALTER TABLE db_bdpbase.Employee DROP IF EXISTS PARTITION(year>2010);
 
-#Dynamic Partitioning
-set hive.exec.dynamic.partition=true;
-set hive.exec.dynamic.partition.mode=nonstrict;
-set hive.exec.max.dynamic.partitions=1000
-set hive.exec.max.dynamic.partitions.pernode=100
+/*
+if the underlying hdfs f/s was deleted without droping the table partition, we can refresh the metadata to reflect the current state by doing -- Drop the table (only in case of external table) - Recreate the table - Repair it (MSCK REPAIR TABLE table_name)
+We can “statically” add a partition in the table and move the file into the partition of the table.
+We can alter the partition in the static partition
+*/
 
-#we can’t perform alter on the Dynamic partition.
+'Dynamic Partitioning'
+	set hive.exec.dynamic.partition=true;
+	set hive.exec.dynamic.partition.mode=nonstrict;
+	set hive.exec.max.dynamic.partitions=1000
+	set hive.exec.max.dynamic.partitions.pernode=100
 
-CREATE TABLE BOOK_EX(ISBN STRING, BOOKTITLE STRING, BOOKAUTHOR STRING, PUBLISHER STRING) --year column is not mentioned as a part of table column here
-PARTITIONED BY (YEAR INT)
-ROW FORMAT DELIMITED
-FIELDS TERMINATED BY '~'
-STORED AS TEXTFILE
-LOCATION '/user/hduser/external/book_xx'; 
+	we can’t perform alter on the Dynamic partition.
 
-INSERT OVERWRITE TABLE BOOK_EX PARTITION(YEAR) SELECT * FROM BOOKS;
+	CREATE TABLE BOOK_EX(ISBN STRING, BOOKTITLE STRING, BOOKAUTHOR STRING, PUBLISHER STRING) --year column is not mentioned as a part of table column here
+	PARTITIONED BY (YEAR INT)
+	ROW FORMAT DELIMITED
+	FIELDS TERMINATED BY '~'
+	STORED AS TEXTFILE
+	LOCATION '/user/hduser/external/book_xx'; 
 
-#To insert the data, the dynamic partition columns must be specified in last among the columns in the
---SELECT statement and in the same order in which they appear in the PARTITION() clause.
+	INSERT OVERWRITE TABLE BOOK_EX PARTITION(YEAR) SELECT * FROM BOOKS;
+	/*
+	To insert the data, the dynamic partition columns must be specified in last among the columns in the SELECT statement and in the same order in which they appear in the PARTITION() clause.
+	*/
+	'__hive_default_partition__' - This gets create when we load data into partitioned table dynamically and partition column has a NULL value. To check we can issue the query like below in where clause
+		
+		SELECT * FROM BOOK_EX WHERE YEAR="__HIVE_DEFAULT_PARTITION__";
 
-#__hive_default_partition__ 
---this gets create when we load data into partitioned table dynamically and partition column has a NULL value.
---to check we can issue the query like below in where clause
-SELECT * FROM BOOK_EX WHERE YEAR="__HIVE_DEFAULT_PARTITION__";
+	'NO_DROP' - Alter the table enable/disable protection to NO_DROP, which prevents a table from being dropped, or OFFLINE, which prevents data (not metadata) in a table from being queried:
 
---Alter the table enable/disable protection to NO_DROP, which prevents a table from being dropped, 
----or OFFLINE, which prevents data (not metadata) in a table from being queried:
+		ALTER TABLE c_employee ENABLE NO_DROP;
+		ALTER TABLE c_employee DISABLE NO_DROP;
 
-ALTER TABLE c_employee ENABLE NO_DROP;
-ALTER TABLE c_employee DISABLE NO_DROP;
+	We can stop a partition form being queried by using the ENABLE OFFLINE clause with ALTER TABLE statement.
+		
+		ALTER TABLE c_employee ENABLE OFFLINE;
+		ALTER TABLE c_employee DISABLE OFFLINE;
 
---We can stop a partition form being queried by using the ENABLE OFFLINE clause with ALTER TABLE statement.
-ALTER TABLE c_employee ENABLE OFFLINE;
-ALTER TABLE c_employee DISABLE OFFLINE;
+`DROPing Tables`:
 
-====================
-#Bucketing 
-set hive.enforce.bucketing = true ;
+	1. Drop external table (drops data & schema) 
+		ALTER TABLE table_name SET TBLPROPERTIES ('EXTERNAL'='FALSE');
+		DROP TABLE table_name;
 
-#We cannot load the data into a bucketed table using LOAD DATA INPATH command as Hive does not support it. 
-#The no of reducers created at compile time and that will be equal to no.of buckets
-#to gain equal distribution qualify the integer column which has high cardinal values example:empid
-
---Create table movies
-CREATE TABLE MOVIES(MID INT,  MNAME STRING, GENRE array<STRING>)
-ROW FORMAT DELIMITED
-FIELDS TERMINATED BY ',' 
-COLLECTION ITEMS TERMINATED BY '|' 
-STORED AS TEXTFILE;
-
---load from file /user/hduser/movies/movies.csv
-LOAD DATA LOCAL INPATH '/home/hduser/MV/movies.csv' INTO TABLE MOVIES;
-
-#above csv file has the header in the file -  alter the table to set new table property
-ALTER TABLE MOVIES SET TBLPROPERTIES ("skip.header.line.count"="1");
--- to list the properties set fot the table.
-SHOW TBLPROPERTIES MOVIES;
-#to unset the tblproperties 
-ALTER TABLE MOVIES UNSET TBLPROPERTIES ('c', 'x', 'y', 'z'); --> c,x,y,z are all property names
-
---after the alters performed again load the input .csv data 
-LOAD DATA INPATH '/user/hduser/movies/movies.csv' OVERWRITE INTO TABLE MOVIES;
---create another table which is clustered and store in ORC format
-CREATE TABLE movies_orc_buc (MID INT,  MNAME STRING, GENRE ARRAY<STRING>)
-CLUSTERED BY (MID) 
-SORTED BY (MID) INTO 5 BUCKETS
-STORED AS ORC;
---insert data to new table from the old table moveis
-INSERT INTO TABLE MOVIES_ORC SELECT * FROM MOVIES;
---alter the buckets to 10 from 5
-ALTER TABLE MOVIE_ORC CLUSTERED BY (MID) INTO 5 BUCKETS;
---again overwrite the insert from old table movies, Now we can see 10 buckets created in hdfs f/s
+	2. Drop external table (keep data & remove only the structure frm hive)
+		DROP TABLE external_hive_table;
 
 ====================
-#To update the column statistics:
-Table Parameters:
-        COLUMN_STATS_ACCURATE   true -> shows the table stats are collected
+'Bucketing' 
+	set hive.enforce.bucketing = true ;
 
-ANALYZE TABLE MOVIES COMPUTE STATISTICS FOR COLUMNS MID,MNAME;
+	We cannot load the data into a bucketed table using LOAD DATA INPATH command as Hive does not support it. 
+	The no of reducers created at compile time and that will be equal to no.of buckets to gain equal distribution qualify the integer column which has high cardinal values example:empid
 
-DESC FORMATTED MOVIES MID; -> to fetch column stats info
-# col_name              data_type               min                     max                     num_nulls               distinct_count          avg_col_len                max_col_len             num_trues               num_falses              comment
-mid                     int                     1                       193886                  0                       96484                                                                                                                      from deserializer
+	--Create table movies
+	CREATE TABLE MOVIES(MID INT,  MNAME STRING, GENRE array<STRING>)
+	ROW FORMAT DELIMITED
+	FIELDS TERMINATED BY ',' 
+	COLLECTION ITEMS TERMINATED BY '|' 
+	STORED AS TEXTFILE;
+
+	--load from file /user/hduser/movies/movies.csv
+	LOAD DATA LOCAL INPATH '/home/hduser/MV/movies.csv' INTO TABLE MOVIES;
+	#above csv file has the header in the file -  alter the table to set new table property
+	ALTER TABLE MOVIES SET TBLPROPERTIES ("skip.header.line.count"="1");
+	-- to list the properties set fot the table.
+	SHOW TBLPROPERTIES MOVIES;
+	#to unset the tblproperties 
+	ALTER TABLE MOVIES UNSET TBLPROPERTIES ('c', 'x', 'y', 'z'); --> c,x,y,z are all property names
+
+	--after the alters performed again load the input .csv data 
+	LOAD DATA INPATH '/user/hduser/movies/movies.csv' OVERWRITE INTO TABLE MOVIES;
+	--create another table which is clustered and store in ORC format
+	CREATE TABLE movies_orc_buc (MID INT,  MNAME STRING, GENRE ARRAY<STRING>)
+	CLUSTERED BY (MID) 
+	SORTED BY (MID) INTO 5 BUCKETS
+	STORED AS ORC;
+	--insert data to new table from the old table moveis
+	INSERT INTO TABLE MOVIES_ORC SELECT * FROM MOVIES;
+	--alter the buckets to 10 from 5
+	ALTER TABLE MOVIE_ORC CLUSTERED BY (MID) INTO 5 BUCKETS;
+	--again overwrite the insert from old table movies, Now we can see 10 buckets created in hdfs f/s
+
 ====================
-Indexing in Hive
---whenever we perform a query on a table that has an index, there is no need for the query to scan all the rows in the table. Further, it checks the index first and then goes to the particular column and performs the operation.
---An Index acts as a reference to the records
-Types - COMPACT Index -stores the pair of indexed column’s value and its blockid. 
-	  - BITMAP Index - stores the combination of indexed column value and list of rows as a bitmap
-#Creating Index
-CREATE INDEX index_name
-ON TABLE table_name (columns,....)
-AS 'org.apache.hadoop.hive.ql.index.compact.CompactIndexHandler'  |  'BITMAP'  <-- refers the type of idex to be created
-WITH DEFERRED REBUILD;
-ALTER INDEX index_nam on table_name REBUILD;
---We can have any number of indexes for a particular table and any type of indexes as well.
--- On the same column we can create both type of indexes on same column
-SHOW FORMATTED INDEX ON MOVIES; <-- list the no of indexes on the tables if exists
---result
-idx_name                tab_name                col_names               idx_tab_name            idx_type                comment
+'Statistics'
+	#To update the column statistics:
+	Table Parameters:
+	        COLUMN_STATS_ACCURATE   true <-- shows the table stats are collected
 
-mid_index               movies                  mid                     movies__movies_mid_index__      compact
-bit_indx                movies                  mid                     movies__movies_bit_indx__       bitmap
---
---drop unwanted index
-DROP INDEX IF EXISTS BIT_INDX ON MOVIES;
+	"ANALYZE TABLE MOVIES COMPUTE STATISTICS FOR COLUMNS MID,MNAME;"
 
-When not to use index in hive:
---Indexes are advised to build on the columns on which you frequently perform operations.
---Building more number of indexes also degrade the performance of your query.
---Type of index to be created should be identified prior to its creation (if your data requires bitmap you should not create compact).This leads to increase in time for executing your query.
+	DESC FORMATTED MOVIES MID; <-- to fetch column stats info
+	# col_name              data_type               min                     max                     num_nulls               distinct_count          avg_col_len                max_col_len             num_trues               num_falses              comment
+	mid                     int                     1                       193886                  0                       96484                                                                                                                      from deserializer
 ====================
-JOINS in hive:
+'Indexing in Hive'
+	Whenever we perform a query on a table that has an index, there is no need for the query to scan all the rows in the table. Further, it checks the index first and then goes to the particular column and performs the operation.
+	An Index acts as a reference to the records
 
-NORMAL JOIN:
-SELECT c.ID, c.NAME, o.AMOUNT, o.DATE FROM CUSTOMERS c LEFT|RIGHT|FULL OUTER JOIN ORDERS o ON (c.ID = o.CUSTOMER_ID);
+Types - 'COMPACT Index'- stores the pair of indexed column’s value and its blockid. 
+	  - 'BITMAP Index' - stores the combination of indexed column value and list of rows as a bitmap
+	#Creating Index
+	CREATE INDEX index_name
+	ON TABLE table_name (columns,....)
+	AS 'org.apache.hadoop.hive.ql.index.compact.CompactIndexHandler'  |  'BITMAP'  <-- refers the type of idex to be created
+	WITH DEFERRED REBUILD;
+	ALTER INDEX index_nam on table_name REBUILD;
 
---Normal join works - each table goes into separate mappers and then to shuffle phase - then to reducer where as one mapper output is copied 
-|--in to memory and another mapper out is streamed to the reducer to perform join. So it is better to load the bigger table to stream and small 
-|---table to copied to memory. 
-STREAMTABLE HINT:
- Select /*+ STREAMTABLE(a) */ a.key, a.value from a join b on a.key = b.key;
---if table a is bigger we are telling hive to stram the table a whereas b copied to memory. Thus enabling optimization. Still stramtable hint uses reducer to perform joins.
---By default the tables in the left is copied to memory and right side table goes to stream.
+We can have any number of indexes for a particular table and any type of indexes as well.
+On the same column we can create both type of indexes on same column.
 
-MAP JOIN:
+	"SHOW FORMATTED INDEX ON MOVIES;"  <-- list the no of indexes on the tables if exists
+	--result
+	idx_name                tab_name                col_names               idx_tab_name            idx_type                comment
+	
+	mid_index               movies                  mid                     movies__movies_mid_index__      compact
+	bit_indx                movies                  mid                     movies__movies_bit_indx__       bitmap
+	--
+	
+Drop unwanted index
+	DROP INDEX IF EXISTS BIT_INDX ON MOVIES;
+	
+	'When not to use index in hive:'
+		Indexes are advised to build on the columns on which you frequently perform operations.
+		Building more number of indexes also degrade the performance of your query.
+		Type of index to be created should be identified prior to its creation (if your data requires bitmap you should not create compact).This leads to increase in time for executing your query.
+====================
+`JOINS in hive`
 
---Map Side Join since one of the tables in the join is a small table and can be loaded into memory,
-|--So that a join could be performed within A MAPPER without using a Map/Reduce step.
---Rightouter join and full outer join are not possible in MAPSIDE join.
+'NORMAL JOIN':
+	SELECT c.ID, c.NAME, o.AMOUNT, o.DATE FROM CUSTOMERS c LEFT|RIGHT|FULL OUTER JOIN ORDERS o ON (c.ID = o.CUSTOMER_ID);
 
-MAPJOIN HINT: 
-Select /*+ MAPJOIN(b) */ a.key, a.value from a join b on a.key = b.key <-- MAPJOIN(b) tells the hive to choose b to load in to memory.
---make sure the parameter is set to true -- set hive.ignore.mapjoin.hint=true;
+	Normal join works - each table goes into separate mappers and then to shuffle phase - then to reducer where as one mapper output is copied 
+	in to memory and another mapper out is streamed to the reducer to perform join. So it is better to load the bigger table to stream and small 
+	table to copied to memory. 
 
---MAPJOIN creates a MAPRED LOCAL TASK is launched before the original join task and serializes the table in hint into an hashtable
-|--the hash table is then uploaded to HADOOP's DISTRIBUTED CACHE - hadoop will copy the hashtable to the local f/s to all the nodes executing the
-|---actual task before anytask for the job are executed on the node. HASHTABLE will be available locally to each mappers. Then the actual join
-|----performed on the mapper.
+'STREAMTABLE HINT':
+	Select /*+ STREAMTABLE(a) */ a.key, a.value from a join b on a.key = b.key;
+	
+	if table a is bigger we are telling hive to stram the table a whereas b copied to memory. Thus enabling optimization. Still stramtable hint uses reducer to perform joins.
+	By default the tables in the left is copied to memory and right side table goes to stream.
 
-AUTO JOIN:
---Auto Join creates a conditional task to check which table in the join has largedataset based on it, Hive chooses table to placed in DC.
+'MAP JOIN':
 
---Parameters: 
-hive.auto.convert.join=true <-- def is true, if set automatically process all joins as mapside join if a table size is less than 25 MB.
-hive.mapjoin.smalltable.filesize=25000000 <-- def is 25MB this size limits the auto join, if we want to enable mapjoin automatically for tables are of size more than 25MB we can tune this paramater.
-hive.auto.convert.join.noconditionaltask=true <-- we can combine three or more map-side joins into a single map-side join if the size of the n-1 table is less than 10 MB.
-hive.auto.convert.join.noconditionaltask.size=10000000; <-- by def 10MBthis size limits the noconditionaltask parameter to work
+	Map Side Join since one of the tables in the join is a small table and can be loaded into memory, so that a join could be performed within A MAPPER without using a Map/Reduce step.
+	Rightouter join and full outer join are not possible in MAPSIDE join.
 
-SMB (Sort-Merge-Bucketed) JOIN:
---To perofrm  SMB join all the following criteria must be true
----1. All join tables must be bucketized.
-----2. Number of buckets of the big table must be divisible by the number of buckets of each of the small table in your query.
------3. Bucket columns from the table and the join columns in your query must be the one and the same.
-------4. Following properties must be set
-set hive.auto.convert.sortmerge.join=true;
-set hive.optimize.bucketmapjoin = true;
-set hive.optimize.bucketmapjoin.sortedmerge = true;
-set hive.auto.convert.sortmerge.join.noconditionaltask=true;
+'MAPJOIN HINT':
+	Select /*+ MAPJOIN(b) */ a.key, a.value from a join b on a.key = b.key <-- MAPJOIN(b) tells the hive to choose b to load in to memory.
+	make sure the parameter set hive.ignore.mapjoin.hint=true is set to true. 
 
-#Big table will result in 10 mappers if the no of bucket is 10. 
---only matching bucket of all small tables are replicated on to each mapper and then the join will takes place on each mapper. 
---Since the records are already sorted an only matching buckets are joined - this task requires no reducers and completes faster.
+	MAPJOIN creates a MAPRED LOCAL TASK is launched before the original join task and serializes the table in hint into an hashtable, 
+	the hash table is then uploaded to HADOOPs DISTRIBUTED CACHE - hadoop will copy the hashtable to the local f/s to all the nodes executing the actual task before anytask 
+	for the job are executed on the node. HASHTABLE will be available locally to each mappers. Then the actual join performed on the mapper.
+
+'AUTO JOIN:'
+	Auto Join creates a conditional task to check which table in the join has largedataset based on it, Hive chooses table to placed in DC.
+
+	Parameters: 
+	hive.auto.convert.join=true <-- def is true, if set automatically process all joins as mapside join if a table size is less than 25 MB.
+	hive.mapjoin.smalltable.filesize=25000000 <-- def is 25MB this size limits the auto join, if we want to enable mapjoin automatically for tables are of size more than 25MB we can tune this paramater.
+	hive.auto.convert.join.noconditionaltask=true <-- we can combine three or more map-side joins into a single map-side join if the size of the n-1 table is less than 10 MB.
+	hive.auto.convert.join.noconditionaltask.size=10000000; <-- by def 10MBthis size limits the noconditionaltask parameter to work
+
+'SMB (Sort-Merge-Bucketed) JOIN':
+   To perform SMB join all the following criteria must be true
+	1. All join tables must be bucketized.
+	2. Number of buckets of the big table must be divisible by the number of buckets of each of the small table in your query.
+	3. Bucket columns from the table and the join columns in your query must be the one and the same.
+	4. Following properties must be setup 
+
+	set hive.auto.convert.sortmerge.join=true;
+	set hive.optimize.bucketmapjoin = true;
+	set hive.optimize.bucketmapjoin.sortedmerge = true;
+	set hive.auto.convert.sortmerge.join.noconditionaltask=true;
+
+	Big table will result in 10 mappers if the no of bucket is 10. 
+	only matching bucket of all small tables are replicated on to each mapper and then the join will takes place on each mapper. 
+	Since the records are already sorted, only matching buckets are joined - this task requires no reducers and completes faster.
 
 =============================================================================
-PIG:
+`PIG`:
 
 for Loading and Storing Hive Data into Pig --> https://acadgild.com/blog/loading-and-storing-hive-data-into-pig
 
@@ -787,7 +804,7 @@ export HCAT_HOME=/usr/local/hive/hcatalog
 
 
 
-Errors and Solution:
+'Errors and Solution:'
 MR job fails with below exception: 
 java.net.ConnectException: Call From master/192.168.1.11 to 0.0.0.0:10020 failed on connection exception: java.net.ConnectException: Connection refused;
 
@@ -796,7 +813,7 @@ java.net.ConnectException: Call From master/192.168.1.11 to 0.0.0.0:10020 failed
 also make an entry in mapred-site.xml for the property 'mapreduce.jobhistory.address'
 
 =============================================================================
-Zookeeper:
+`Zookeeper`
 
 Read --> https://unskilledcoder.github.io/hadoop/hbase/2016/12/11/hbase-cluster-setup-with-zookeeper.html
 
@@ -814,8 +831,8 @@ server.1=master:2888:3888
 server.2=dn1:2888:3888
 server.3=dn2:2888:3888
 
-in dn1 --> sudo mkdir /usr/local/zookeeper; sudo chown -R hduser:hadoop /usr/local/zookeeper
-in dn2 --> sudo mkdir /usr/local/zookeeper; sudo chown -R hduser:hadoop /usr/local/zookeeper
+in dn1 -> sudo mkdir /usr/local/zookeeper; sudo chown -R hduser:hadoop /usr/local/zookeeper
+in dn2 -> sudo mkdir /usr/local/zookeeper; sudo chown -R hduser:hadoop /usr/local/zookeeper
 
 scp -r /usr/local/zookeeper/\* hduser@dn1:/usr/local/zookeeper
 scp -r /usr/local/zookeeper/\* hduser@dn2:/usr/local/zookeeper
@@ -845,126 +862,126 @@ sudo /etc/init.d/hbase-regionserver restart
 sudo /etc/init.d/zookeeper-server status
 
 =============================================================================
-HBASE
+`HBASE`
+'Installation'
+	tar xzf hbase-0.98.4-hadoop2-bin.tar.gz
+	sudo mv hbase-0.98.4-hadoop2 /usr/local/hbase
+	sudo chown -R hduser:hadoop /usr/local/hbase
 
-tar xzf hbase-0.98.4-hadoop2-bin.tar.gz
-sudo mv hbase-0.98.4-hadoop2 /usr/local/hbase
-sudo chown -R hduser:hadoop /usr/local/hbase
+	cd /usr/local/hbase/conf
+	echo "export JAVA_HOME=/usr/lib/jvm/jdk1.8.0_181" >> hbase-env.sh
+	echo "export HBASE_MANAGES_ZK=false" >> hbase-env.sh
 
-cd /usr/local/hbase/conf
-echo 'export JAVA_HOME=/usr/lib/jvm/jdk1.8.0_181' >> hbase-env.sh
-echo 'export HBASE_MANAGES_ZK=false' >> hbase-env.sh
+	vi ~/.bashrc
+	export HBASE_HOME=/usr/local/hbase
+	export PATH=$PATH:$HBASE_HOME/bin
+	export HBASE_MANAGES_ZK=false
 
-vi ~/.bashrc
-export HBASE_HOME=/usr/local/hbase
-export PATH=$PATH:$HBASE_HOME/bin
-export HBASE_MANAGES_ZK=false
+	hadoop fs -mkdir /user/hduser/hbase
 
-hadoop fs -mkdir /user/hduser/hbase
+	vi /usr/local/hbase/conf/hbase-site.xml
+	<configuration>
+	<property>
+		<name>hbase.cluster.distributed</name>
+		<value>true</value>
+	</property>
+	<property>
+		<name>hbase.rootdir</name>
+		<value>hdfs://master:54310/user/hduser/hbase</value>
+	</property>
+	<property>
+		<name>hbase.zookeeper.property.dataDir</name>
+		<value>/usr/local/zookeeper/data</value>
+	</property>
+	<property>
+	    <name>hbase.master</name>
+	    <value>master:60000</value>
+	</property>
+	<property>
+	    <name>hbase.master.port</name>
+	    <value>60000</value>
+	    <description>The port master should bind to.</description>
+	</property>
+	<!-- zookeeper cluster we setup in previous post -->
+	<property>
+	    <name>hbase.zookeeper.quorum</name>
+	    <value>master,dn1,dn2</value>
+	</property>
+	<property>
+		<name>hbase.zookeeper.property.clientPort</name>
+		<value>2181</value>
+	</property>
+	<!-- 2 since we have 2 slaves for data -->
+	<property>
+	    <name>dfs.replication</name>
+	    <value>2</value>
+	</property>
+	</configuration>
 
-vi /usr/local/hbase/conf/hbase-site.xml
-<configuration>
-<property>
-	<name>hbase.cluster.distributed</name>
-	<value>true</value>
-</property>
-<property>
-	<name>hbase.rootdir</name>
-	<value>hdfs://master:54310/user/hduser/hbase</value>
-</property>
-<property>
-	<name>hbase.zookeeper.property.dataDir</name>
-	<value>/usr/local/zookeeper/data</value>
-</property>
-<property>
-    <name>hbase.master</name>
-    <value>master:60000</value>
-</property>
-<property>
-    <name>hbase.master.port</name>
-    <value>60000</value>
-    <description>The port master should bind to.</description>
-</property>
-<!-- zookeeper cluster we setup in previous post -->
-<property>
-    <name>hbase.zookeeper.quorum</name>
-    <value>master,dn1,dn2</value>
-</property>
-<property>
-	<name>hbase.zookeeper.property.clientPort</name>
-	<value>2181</value>
-</property>
-<!-- 2 since we have 2 slaves for data -->
-<property>
-    <name>dfs.replication</name>
-    <value>2</value>
-</property>
-</configuration>
+	. ~/.bashrc
+	Write correct region server hostnames into $HBASE_HOME/conf/regionservers
+	echo dn1 > $HBASE_HOME/conf/regionservers
+	echo dn2 >> $HBASE_HOME/conf/regionservers
 
-. ~/.bashrc
-Write correct region server hostnames into $HBASE_HOME/conf/regionservers
-echo dn1 > $HBASE_HOME/conf/regionservers
-echo dn2 >> $HBASE_HOME/conf/regionservers
+	Copy the environment variables and HBase config to other nodes
+	scp -r ~/.bashrc hduser@dn1:/home/hduser
+	scp -r ~/.bashrc hduser@dn2:/home/hduser
 
-Copy the environment variables and HBase config to other nodes
-scp -r ~/.bashrc hduser@dn1:/home/hduser
-scp -r ~/.bashrc hduser@dn2:/home/hduser
+	sudo mkdir /usr/local/hbase/  && sudo chown -R hduser:hadoop /usr/local/hbase --> in dn1 and dn2
 
-sudo mkdir /usr/local/hbase/  && sudo chown -R hduser:hadoop /usr/local/hbase --> in dn1 and dn2
-
-scp -r /usr/local/hbase/\* hduser@dn1:/usr/local/hbase
-scp -r /usr/local/hbase/\* hduser@dn2:/usr/local/hbase
+	scp -r /usr/local/hbase/\* hduser@dn1:/usr/local/hbase
+	scp -r /usr/local/hbase/\* hduser@dn2:/usr/local/hbase
 
 start-hbase.sh
->list --> to list tables
->create 'Patient1','Personal','Medical'
->put 'Patient','001','Personal:pname','Ramesh'
+	>list --> to list tables
+	>create 'Patient1','Personal','Medical'
+	>put 'Patient','001','Personal:pname','Ramesh'
 
->alter 'Patient1',{NAME=>'Personal',VERSIONS=>3} --> to change the update history from 1 to 3
->put 'Patient1','001','Personal:pname','Ramesh k'
->put 'Patient1','001','Personal:pname','k Ramesh'
->scan 'Patient1',{VERSIONS => 3} --> to list the values of table with last 3 update history
+	>alter 'Patient1',{NAME=>'Personal',VERSIONS=>3} --> to change the update history from 1 to 3
+	>put 'Patient1','001','Personal:pname','Ramesh k'
+	>put 'Patient1','001','Personal:pname','k Ramesh'
+	>scan 'Patient1',{VERSIONS => 3} --> to list the values of table with last 3 update history
 
->delete 'Patient1','002','Personal:pname' --> delete a specific column from rowkey
->deleteall 'Patient1','001' --> delete entire rowkey details
->alter 'custmaster',{NAME=>'insurancehive',METHOD=>'delete'}
+	>delete 'Patient1','002','Personal:pname' --> delete a specific column from rowkey
+	>deleteall 'Patient1','001' --> delete entire rowkey details
+	>alter 'custmaster',{NAME=>'insurancehive',METHOD=>'delete'}
 
 *****Error and SOlution*****
 1. The following error appears in /usr/local/hbase/logs/hbase-hduser-master-master.log
 
-2018-10-04 12:07:46,986 FATAL [master:master:60000] master.HMaster: Master server abort: loaded coprocessors are: []
-2018-10-04 12:07:46,987 FATAL [master:master:60000] master.HMaster: Unhandled exception. Starting shutdown.
-org.apache.hadoop.hbase.TableExistsException: hbase:namespace
-        at org.apache.hadoop.hbase.master.handler.CreateTableHandler.prepare(CreateTableHandler.java:120)
-        at org.apache.hadoop.hbase.master.TableNamespaceManager.createNamespaceTable(TableNamespaceManager.java:232)
-        at org.apache.hadoop.hbase.master.TableNamespaceManager.start(TableNamespaceManager.java:86)
-        at org.apache.hadoop.hbase.master.HMaster.initNamespace(HMaster.java:1051)
-        at org.apache.hadoop.hbase.master.HMaster.finishInitialization(HMaster.java:914)
-        at org.apache.hadoop.hbase.master.HMaster.run(HMaster.java:603)
-        at java.lang.Thread.run(Thread.java:748)
-2018-10-04 12:07:46,989 INFO  [master:master:60000] master.HMaster: Aborting
-.
-.
-.
-2018-10-04 12:07:47,122 INFO  [master:master:60000] master.HMaster: HMaster main thread exiting
-2018-10-04 12:07:47,123 ERROR [main] master.HMasterCommandLine: Master exiting
-java.lang.RuntimeException: HMaster Aborted
-        at org.apache.hadoop.hbase.master.HMasterCommandLine.startMaster(HMasterCommandLine.java:194)
-        at org.apache.hadoop.hbase.master.HMasterCommandLine.run(HMasterCommandLine.java:135)
-        at org.apache.hadoop.util.ToolRunner.run(ToolRunner.java:70)
-        at org.apache.hadoop.hbase.util.ServerCommandLine.doMain(ServerCommandLine.java:126)
-        at org.apache.hadoop.hbase.master.HMaster.main(HMaster.java:2793)
-Thu Oct  4 12:10:15 IST 2018 Stopping hbase (via master)
+	2018-10-04 12:07:46,986 FATAL [master:master:60000] master.HMaster: Master server abort: loaded coprocessors are: []
+	2018-10-04 12:07:46,987 FATAL [master:master:60000] master.HMaster: Unhandled exception. Starting shutdown.
+	org.apache.hadoop.hbase.TableExistsException: hbase:namespace
+	        at org.apache.hadoop.hbase.master.handler.CreateTableHandler.prepare(CreateTableHandler.java:120)
+	        at org.apache.hadoop.hbase.master.TableNamespaceManager.createNamespaceTable(TableNamespaceManager.java:232)
+	        at org.apache.hadoop.hbase.master.TableNamespaceManager.start(TableNamespaceManager.java:86)
+	        at org.apache.hadoop.hbase.master.HMaster.initNamespace(HMaster.java:1051)
+	        at org.apache.hadoop.hbase.master.HMaster.finishInitialization(HMaster.java:914)
+	        at org.apache.hadoop.hbase.master.HMaster.run(HMaster.java:603)
+	        at java.lang.Thread.run(Thread.java:748)
+	2018-10-04 12:07:46,989 INFO  [master:master:60000] master.HMaster: Aborting
+	.
+	.
+	.
+	2018-10-04 12:07:47,122 INFO  [master:master:60000] master.HMaster: HMaster main thread exiting
+	2018-10-04 12:07:47,123 ERROR [main] master.HMasterCommandLine: Master exiting
+	java.lang.RuntimeException: HMaster Aborted
+	        at org.apache.hadoop.hbase.master.HMasterCommandLine.startMaster(HMasterCommandLine.java:194)
+	        at org.apache.hadoop.hbase.master.HMasterCommandLine.run(HMasterCommandLine.java:135)
+	        at org.apache.hadoop.util.ToolRunner.run(ToolRunner.java:70)
+	        at org.apache.hadoop.hbase.util.ServerCommandLine.doMain(ServerCommandLine.java:126)
+	        at org.apache.hadoop.hbase.master.HMaster.main(HMaster.java:2793)
+	Thu Oct  4 12:10:15 IST 2018 Stopping hbase (via master)
 
-According the error above, there should be a table named hbase:namespace for maintaining the information of namespace tables. The above error is displayed when the HMaster creates the namespace directory under /hbase-unsecure directory(for non-secured cluster) and /hbase-secure(for secured cluster) while starting the process.
+	According the error above, there should be a table named hbase:namespace for maintaining the information of namespace tables. The above error is displayed when the HMaster creates the namespace directory under /hbase-unsecure directory(for non-secured cluster) and /hbase-secure(for secured cluster) while starting the process.
 
-Manually repair the Hbase Metastore by
-$HBASE_HOME/bin/hbase org.apache.hadoop.hbase.util.hbck.OfflineMetaRepair
-$ZK_HOME/bin/zkCli.sh
--> ls /
--> rmr /hbase-unsecure
--> quit
-Restart HBase Service.
+	Manually repair the Hbase Metastore by
+	$HBASE_HOME/bin/hbase org.apache.hadoop.hbase.util.hbck.OfflineMetaRepair
+	$ZK_HOME/bin/zkCli.sh
+	-> ls /
+	-> rmr /hbase-unsecure
+	-> quit
+	Restart HBase Service.
 
 2. Error creating table in HBASE. previous tables were available and error appeared after fresh start. Last session of Hbase closed properly but not zookeeper (power shut down)
 
@@ -1094,47 +1111,35 @@ Try to run hadoop fsck / to find out the corrupted files and repair
 bin/hadoop fsck / -delete
 				
 ==================================================================================
-Phoenix:
+`Phoenix`
+'Installation'
+	Read https://dzone.com/articles/apache-phoenix-sql-driver
 
-Read https://dzone.com/articles/apache-phoenix-sql-driver
+	vi /usr/local/hbase/conf/hbase-site.xml
 
-vi /usr/local/hbase/conf/hbase-site.xml
+	<property>
+	<name>hbase.regionserver.wal.codec</name>
+	<value>org.apache.hadoop.hbase.regionserver.wal.IndexedWALEditCodec</value>
+	</property>
 
-<property>
-<name>hbase.regionserver.wal.codec</name>
-<value>org.apache.hadoop.hbase.regionserver.wal.IndexedWALEditCodec</value>
-</property>
+	.bashrc
+	export PHOENIX_HOME=/usr/local/phoenix
+	export PATH=$PATH:$PHOENIX_HOME/bin
 
-.bashrc
-export PHOENIX_HOME=/usr/local/phoenix
-export PATH=$PATH:$PHOENIX_HOME/bin
+	cd /home/hduser/install
+	tar xzf phoenix-4.6.0-HBase-0.98-bin.tar.gz
+	sudo mv phoenix-4.6.0-HBase-0.98-bin /usr/local/phoenix
+	sudo chown -R hduser:hadoop /usr/local/phoenix
+	Add below Jar files to hbase lib folder
+	cd /usr/local/phoenix/
 
+	Copy the below jars into region servers (dn1, dn2) path /usr/local/hbase/lib/
 
-cd /home/hduser/install
-tar xzf phoenix-4.6.0-HBase-0.98-bin.tar.gz
-sudo mv phoenix-4.6.0-HBase-0.98-bin /usr/local/phoenix
-sudo chown -R hduser:hadoop /usr/local/phoenix
-Add below Jar files to hbase lib folder
-cd /usr/local/phoenix/
-
-Copy the below jar's into region server's (dn1, dn2) path /usr/local/hbase/lib/
-
-cp phoenix-4.6.0-HBase-0.98-client-minimal.jar /usr/local/hbase/lib/
-cp phoenix-core-4.6.0-HBase-0.98.jar /usr/local/hbase/lib/ 
+	cp phoenix-4.6.0-HBase-0.98-client-minimal.jar /usr/local/hbase/lib/
+	cp phoenix-core-4.6.0-HBase-0.98.jar /usr/local/hbase/lib/ 
 
 ===============================================================
-SCALA:
-
-Download tar file - http://downloads.typesafe.com/scala/2.11.6/scala-2.11.6.tgz
-(install in all the 3 machines master and slaves)
-tar -xf scala-2.11.6.tgz
-sudo mv scala-2.11.6 /usr/local/scala
-sudo chown -R hduser:hadoop /usr/local/scala
-
-vi .bashrc --> add following lines
-#Scala Path
-export SCALA_HOME=/usr/local/scala
-export PATH=$PATH:$SCALA_HOME/bin
+`SCALA`
 
 scala -version --> to verify 
 
@@ -1181,66 +1186,63 @@ m: Int = 55
 
 functions:
 
-MONAD  -->https://medium.com/@sinisalouc/demystifying-the-monad-in-scala-cc716bb6f534
-option
-trait
+'MONAD'  -->https://medium.com/@sinisalouc/demystifying-the-monad-in-scala-cc716bb6f534
+'option'
+'trait'
 :+
 
 ===============================================================
-SPARK:
+`SPARK`:
 
-Download tar file http://mirrors.wuchna.com/apachemirror/spark/spark-2.3.2/spark-2.3.2-bin-hadoop2.7.tgz
-tar -xf spark-2.3.2-bin-hadoop2.7.tgz
-sudo mv  spark-2.3.2-bin-hadoop2.7 /usr/local/spark
-ls -ld /usr/local/spark
-vi ~/.bashrc --> add following lines
-#Scala Path
-export SPARK_HOME=/usr/local/scala
-export PATH=$PATH:$SPARK_HOME/bin
+'Installation':
+	Download tar file http://mirrors.wuchna.com/apachemirror/spark/spark-2.3.2/spark-2.3.2-bin-hadoop2.7.tgz
+		tar -xf spark-2.3.2-bin-hadoop2.7.tgz
+		sudo mv  spark-2.3.2-bin-hadoop2.7 /usr/local/spark
+		ls -ld /usr/local/spark
+		vi ~/.bashrc --> add following lines
+	Scala Path
+		export SPARK_HOME=/usr/local/scala
+		export PATH=$PATH:$SPARK_HOME/bin
+		
+	Spark Master Configuration:
+		cd /usr/local/spark/conf
+		cp spark-env.sh.template spark-env.sh
+		
+	vi /usr/local/spark/conf/spark-env.sh --> add following lines
+		export SPARK_MASTER_HOST=master
+		export JAVA_HOME=/usr/lib/jvm/jdk1.8.0_181
+	
+	vi /usr/local/hadoop/etc/hadoop/yarn-site.xml
+		<property>
+		 <name>yarn.nodemanager.vmem-check-enabled</name>
+		 <value>false</value>
+		 <description>Whether virtual memory limits will be enforced for containers</description>
+		</property>
+		<property>
+		 <name>yarn.nodemanager.vmem-pmem-ratio</name>
+		 <value>4</value>
+		 <description>Ratio between virtual memory to physical memory for containers</description>
+		</property> 
 
-Spark Master Configuration:
-cd /usr/local/spark/conf
-cp spark-env.sh.template spark-env.sh
 
-vi /usr/local/spark/conf/spark-env.sh --> add following lines
-export SPARK_MASTER_HOST=master
-export JAVA_HOME=/usr/lib/jvm/jdk1.8.0_181
+	hadoop fs -put /usr/local/spark/jars/* /user/spark/share/lib/     -- */
 
-vi /usr/local/hadoop/etc/hadoop/yarn-site.xml
-<property>
- <name>yarn.nodemanager.vmem-check-enabled</name>
- <value>false</value>
- <description>Whether virtual memory limits will be enforced for containers</description>
-</property>
-<property>
- <name>yarn.nodemanager.vmem-pmem-ratio</name>
- <value>4</value>
- <description>Ratio between virtual memory to physical memory for containers</description>
-</property> 
-
-
-hadoop fs -put /usr/local/spark/jars/* /user/spark/share/lib/     -- */
-
-spark.yarn.memory=256m
-spark.driver.memory=25m
-spark.driver.cores=1
-spark.executor.cores=1
-spark.executor.memory=256m
-spark.yarn.jars=hdfs://master:54310/user/spark/share/lib/*.jar      ---- */
+	spark.yarn.memory=256m
+	spark.driver.memory=25m
+	spark.driver.cores=1
+	spark.executor.cores=1
+	spark.executor.memory=256m
+	spark.yarn.jars=hdfs://master:54310/user/spark/share/lib/*.jar      ---- */
 
 spark-shell --verbose --master yarn --driver-memory 512m --num-executors 1 --executor-cores 2 --executor-memory 512m
 
-Error while starting spark-shell:
+'Error while starting spark-shell':
 	ERROR TransportClient:233 - Failed to send RPC
 	refer --> https://issues.apache.org/jira/browse/YARN-4714 
-	Solution:
+	'Solution':
 		spark-shell --master yarn --conf "spark.executor.extraJavaOptions = -XX:ReservedCodeCacheSize=100M -XX:MaxMetaspaceSize=256m -XX:CompressedClassSpaceSize=256m" driver-memory 512m --num-executors 1 --executor-cores 2 --executor-memory 512m --conf "spark.yarn.jars=hdfs://master:54310/user/spark/share/lib/*.jar" --conf "spark.yarn.maxAppAttempts=1"
 
-spark -version
-
-//Initialize in REPL/IDE where already spark context available ready
-
-	spark-shell --verbose --master yarn --driver-memory 512m --num-executors 1 --executor-cores 2 --executor-memory 512m
+spark -version -> to find the version of the spark
 
 //Initialize programatically - v1.6
 	import org.apache.spark.{SparkConf, SparkContext}
@@ -1256,12 +1258,13 @@ spark -version
 	sc.getConf.getAll
 	sc.getConf.getAll.foreach(println)
 
-//RDD (resilient distributed datasets) -- RDD is an immutable collection of distributed objects/elements partitioned across the nodes of clusters and operated on in parallel. Features are immutable, inmemory computation, lazy evaluations, Fault tolerance,  Partitioning. 
+`RDD (resilient distributed datasets)`
+	RDD is an immutable collection of distributed objects/elements partitioned across the nodes of clusters and operated on in parallel. Features are immutable, inmemory computation, lazy evaluations, Fault tolerance, Partitioning. 
 
-//RDD operation: Transformations - Creating a new RDD from an existing RDD is known as transformation. Ex: map, flatMap
+	RDD operation: Transformations - Creating a new RDD from an existing RDD is known as transformation. Ex: map, flatMap
 		Actions - all the transformations are triggered only when an action is called. Ex: sum, count.
 		
-//RDD Creation: 
+`RDD Creation` 
 	'Using parallized collection' - it can be created by applying parallelize method on an existing collection.
 		val data = Array(1,2,3,4,5)
 		val rddData = sc.parallelize(data)
@@ -1281,8 +1284,7 @@ spark -version
 	'Creating an RDD with file Partitioning':  By default, it divides data into two partitions also the num of partitions is equal to the num of CPU cores available in the cluster, but the number of partitions can be specified while creating an RDD.
 		val rdd = sc.textFile("home/data/keywords.txt", 3)
 
-//Transformations - RowLevel Transformation
-
+`Transformations`
 	'map'- acts on one element and produces one element. Returns a new data set by operating on each element of the source RDD.
 		MAP o/p is of type - org.apache.spark.rdd.RDD[Array[String]] = MapPartitionsRDD[8]
 
@@ -1317,7 +1319,7 @@ spark -version
 		val final = leftouterjoinfilter.map(mm => mm._2._1)
 
 	
-//Actions: Action returns values to the driver program.
+`Actions`: Action returns values to the driver program.
 
 	'reduce(func)' - returns a data set by aggregating the elementsof the data set using a function func. 
 			The function takes two arguments and returns a single argument.
@@ -1336,41 +1338,42 @@ spark -version
 	
 	'foreach' - If we apply foreach directly on RDD - it will not return anything. Because spark apis will be executed in worker nodes where the apis we are performing on the arrays will be excuted in current session/machine where we running it.
 
-//Paired RDDs: Each element in the pair RDDs is represented as a key/value pair. Pair RDDs are useful for sorting, grouping.
+`Paired RDDs`:
+	 Each element in the pair RDDs is represented as a key/value pair. Pair RDDs are useful for sorting, grouping.
 
 	'groupByKey' - doesnt take any arguments to be passed, doesnot use combiner 
 			In groupByKey(), all the key-value pairs are shuffled around. This is a lot of unnecessary data to being transferred over the network.
-		>> val words = Array("one", "two", "two", "three", "three", "three")
-		>> val wordPairsRDD = sc.parallelize(words).map(word => (word, 1))
-		>> val wordCountsWithGroup = wordPairsRDD
-			.groupByKey()
-			.map(t => (t._1, t._2.sum))
-			.collect()
+		val words = Array("one", "two", "two", "three", "three", "three")
+		val wordPairsRDD = sc.parallelize(words).map(word => (word, 1))
+		val wordCountsWithGroup = wordPairsRDD
+		.groupByKey()
+		.map(t => (t._1, t._2.sum))
+		.collect()
 		
 	'reduceByKey' - works much better on a large dataset. Thats because Spark knows it can combine output with a common key on each partition before shuffling the data. pairs on the same machine with the same key are combined (by using the lamdba function passed into reduceByKey) before the data is shuffled. Then the lamdba function is called again to reduce all the values from each partition to produce one final result
-		>> val words = Array("one", "two", "two", "three", "three", "three")
-		>> val wordPairsRDD = sc.parallelize(words).map(word => (word, 1))
-		>> val wordCountsWithReduce = wordPairsRDD
-			.reduceByKey(_ + _)
-			.collect()
+		val words = Array("one", "two", "two", "three", "three", "three")
+		val wordPairsRDD = sc.parallelize(words).map(word => (word, 1))
+		val wordCountsWithReduce = wordPairsRDD
+		.reduceByKey(_ + _)
+		.collect()
 	
 	'combineByKey' - It can be used when you are combining elements but your return type differs from your input value type.
 	
 	'sortByKey()' - applied on a data set of (K, V) pairs, it returns a data set of (K, V) pairs where keys are sorted in ascending or descending order as specified in the boolean ascending argument. 
-		>> val rdd = sc.textFile("/home/data/people.csv")
-		>> val splitRdd = rdd.filter(line => !line.contains("year")).map(line => line.split(","))
-		>> val fieldRdd = splitRdd.map(f => (f(1),f(3).toInt)).sortByKey(false) <-# false represents that the data to be sorted in desc order
-		>> fieldRdd.foreach(println)
-	
+		val rdd = sc.textFile("/home/data/people.csv")
+		val splitRdd = rdd.filter(line => !line.contains("year")).map(line => line.split(","))
+		val fieldRdd = splitRdd.map(f => (f(1),f(3).toInt)).sortByKey(false) <- false represents that the data to be sorted in desc order
+		fieldRdd.foreach(println)
 	#
 	
-//Lineage -  RDD lineage is nothing but the graph of all the parent RDDs of an RDD. it creates a logical execution plan.
+`Lineage` -  RDD lineage is nothing but the graph of all the parent RDDs of an RDD. it creates a logical execution plan.
 			To view the lineage, use toDebugString
 		>> rdd.toDebugString
 		
-//DAG - 'Direct Acylic Graph': Phy exec plan.  When an action is called on the RDD, Spark creates the DAG and submits the DAG to the DAG scheduler.
+`DAG - 'Direct Acylic Graph'`:
+	 Phy exec plan.  When an action is called on the RDD, Spark creates the DAG and submits the DAG to the DAG scheduler.
 		1. The DAG scheduler divides operators such as map, flatMap, and so on, into stages of tasks.
-		2. The result of a DAG scheduler is a set of stages.
+	 	2. The result of a DAG scheduler is a set of stages.
 		3. The stages are passed on to the Task Scheduler.
 		4. The Task Scheduler launches tasks via Cluster Manager.
 		5. The worker executes the tasks.
@@ -1379,7 +1382,7 @@ spark -version
 			Examples are map, filter, and so on.
 		• 'Wide transformation:' The operators that require the data to be shuffled are grouped together as a stage. An example is reduceByKey
 
-//Persisting RDD:  Persisting an RDD stores the computation result in memory and reuses it in other actions on that data set. 
+`Persisting RDD`:  Persisting an RDD stores the computation result in memory and reuses it in other actions on that data set. 
 	'cache()' - Uses the default storage level is StorageLevel.MEMORY_ONLY -> RDD is stored as deserialized Java object in the JVM. If the size of RDD is 			greater than memory, It will not cache some partition and recompute them next time whenever needed. 
 			
 	'persist()' - we can use various storage levels in this method as follows 
@@ -1396,12 +1399,12 @@ spark -version
 
 #######################
 
-//SparkSQL - The Spark SQL module consists of DataFrames and Datasets and Catalyst Optimizer.
+`SparkSQL` - The Spark SQL module consists of DataFrames and Datasets and Catalyst Optimizer.
 	
-//DataFrame - A DataFrame is an immutable, distributed collection of data that is organized into rows, where each one consists set of columns which has name and type. In other words, this distributed collection of data has a structure defined by a schema. 
+`DataFrame` - A DataFrame is an immutable, distributed collection of data that is organized into rows, where each one consists set of columns which has name and type. In other words, this distributed collection of data has a structure defined by a schema. 
 
-//Creating DataFrames:
-	//Creating DataFrames from RDDs: 
+`Creating DataFrames`
+	'Creating DataFrames from RDDs': 
 		"To use toDF function we need to import implicit modules" . 
 		IMPLICITS - Used for converting Scala objects (incl. RDDs) into a Dataset, DataFrame, Columns or supporting such conversions. implicits object is defined inside SparkSession and hence requires that you build a SparkSession instance first before importing implicits conversions.
 		
@@ -1432,7 +1435,7 @@ spark -version
 			+---+-----+
 		>> spark.range(5,15,2).toDF("num").show  //spark.range itself results in RDD
 		
-	//Converting a Collection Tuple to a DataFrame Using Spark’s toDF Implicit:
+	'Converting a Collection Tuple to a DataFrame Using Spark’s toDF Implicit':
 		>> val movies = Seq(("Damon, Matt", "The Bourne Ultimatum", 2007L),
 							("Damon, Matt", "Good Will Hunting", 1997L))
 		>> val moviesDF = movies.toDF("actor", "title", "year")
@@ -1448,9 +1451,9 @@ spark -version
 			|Damon, Matt| Good Will Hunting  |1997|
 			+-----------+--------------------+----+
 			
-	//Creating a DataFrame from an RDD with a Schema Created Programmatically
+	'Creating a DataFrame from an RDD with a Schema Created Programmatically'
 		>> import org.apache.spark.sql.Row
-		>> import org.apache.spark.sql.types._		//required to using types in schema creation
+		>> import org.apache.spark.sql.types._		<-- required to using types in schema creation
 		>> val peopleRDD = spark.sparkContext.parallelize(Array(Row(1L, "John Doe", 30L), Row(2L, "Mary Jane", 25L)))
 		>> val schema = StructType(Array(
 					   StructField("id", LongType, true),
@@ -1470,50 +1473,48 @@ spark -version
 		| 2| Mary Jane| 25 |
 		+--+-----------+---+
 		
-	//Creating DataFrames from Data Sources:
-		General format - >> spark.read.format(...).option("key", "value").schema(...).load()   #v2.x
-
-	'text file' #reading data from text file separated by | symbol and creating DF on it. Considering the 3rd column is Integer (total 4 columns).
-		>> val rawInput = sc.textFile("text.txt")
-
-		>> val df1= rawInput.map(x => x.split("|")).map( x=> (x(0),x(1),x(2).toInt,x(3)) ).toDF("tbl_nm", "plnt_nm", "pk_nm", "log")
-		 
-		>> val df2 = rawInput.map(mm => mm.split("|")).map {case Array(a,b,c,d) => (a,b,c.toInt,d)}.toDF("tbl_nm","plnt_nm","pk_nm","log")
-		 
-		>> case class Schema(tbl_nm: String, plnt_nm: string, pk_nm: Int, log: string)
-		>> val df3= rawInput.map(x => x.split("|")).map( x=> Schema(x(0),x(1),x(2),x(3)) ).toDF()
-		 
-		>> import org.apache.spark.sql.types.{StructType,StructField,StringType}
-		>> val schema = StructType(Array(
-		 				StructField("id", LongType, true),
-		 				StructField("name", StringType, true),
-		 				StructField("age", LongType, true) ))
-		>> val df4 = spark.createDataFrame(rawInput, schema)
-		
-		>> df4.printSchema
-		 
-		We use registerTempTable or CreateOrReplaceTempView/createGlobalTempView (Spark > = 2.0) on our spark Dataframe.
-		 	CreateorReplaceTempView is used when you want to store the table for a particular spark session and 
-		 	createGlobalTempView is used when you want to share the temp table across multiple spark sessions.
-		
-		>> df1.registerTempTable("SampleTable")
-		>> 
-		>> sqlContext.sql("select count(1) from SampleTable").show
-		>> 
-		>> Inspect RDD Partitions Programatically
-		>> In the Scala API, an RDD holds a reference to its Array of partitions, which you can use to find out how many partitions there are:
-		>> 
-		>> scala> val someRDD = sc.parallelize(1 to 100, 30)
-		>> someRDD: org.apache.spark.rdd.RDD[Int] = ParallelCollectionRDD[0] at parallelize at <console>:12
-		>> 
-		>> scala> someRDD.partitions.size
-		>> res0: Int = 30
-		>> In the python API, there is a method for explicitly listing the number of partitions:
-		>> 
-		>> In [1]: someRDD = sc.parallelize(range(101),30)
-		>> 
-		>> In [2]: someRDD.getNumPartitions()
-		>> Out[2]: 30
+	'Creating DataFrames from Data Sources':
+		General format - >> spark.read.format(...).option("key", "value").schema(...).load()
+	'txt file' 
+		#reading data from text file separated by | symbol and creating DF on it. Considering the 3rd column is Integer (total 4 columns).
+    	>> val rawInput = sc.textFile("text.txt")
+	
+    	>> val df1= rawInput.map(x => x.split("|")).map( x=> (x(0),x(1),x(2).toInt,x(3)) ).toDF("tbl_nm", "plnt_nm", "pk_nm", "log")
+    	>> val df2 = rawInput.map(mm => mm.split("|")).map {case Array(a,b,c,d) => (a,b,c.toInt,d)}.toDF("tbl_nm","plnt_nm","pk_nm","log")
+    	 
+    	>> case class Schema(tbl_nm: String, plnt_nm: string, pk_nm: Int, log: string)
+    	>> val df3= rawInput.map(x => x.split("|")).map( x=> Schema(x(0),x(1),x(2),x(3)) ).toDF()
+    	 
+    	>> import org.apache.spark.sql.types.{StructType,StructField,StringType}
+    	>> val schema = StructType(Array(
+    	        StructField("id", LongType, true),
+    	        StructField("name", StringType, true),
+    	        StructField("age", LongType, true) ))
+    	>> val df4 = spark.createDataFrame(rawInput, schema)
+    	
+    	>> df4.printSchema
+    	 
+    We use 'registerTempTable' or CreateOrReplaceTempView/createGlobalTempView (Spark > = 2.0) on our spark Dataframe.
+      'CreateorReplaceTempView' is used when you want to store the table for a particular spark session and 
+      'createGlobalTempView' is used when you want to share the temp table across multiple spark sessions.
+    
+    	>> df1.registerTempTable("SampleTable")
+       	>> sqlContext.sql("select count(1) from SampleTable").show
+    
+    Inspect RDD Partitions Programatically
+    	In the Scala API, an RDD holds a reference to its Array of partitions, which you can use to find out how many partitions there are:
+    
+    	>> scala> val someRDD = sc.parallelize(1 to 100, 30)
+    	   someRDD: org.apache.spark.rdd.RDD[Int] = ParallelCollectionRDD[0] at parallelize at <console>:12
+    
+    	>> scala> someRDD.partitions.size
+    	   res0: Int = 30
+    	In the python API, there is a method for explicitly listing the number of partitions:
+    
+    	>> scala> someRDD = sc.parallelize(range(101),30)
+    
+    	>> scala> someRDD.getNumPartitions()
+    	>> res1: 30
 
 	'CSV format'
 		>> import org.apache.spark.sql.types._
@@ -1523,10 +1524,10 @@ spark -version
 						.add("year",IntegerType,true)
 		>> val movies4 = spark.read.option("header","true").option("sep", "\t").option("mode", "PERMISSIVE").schema(movieSchema).csv("<path>/movies.csv")
 		
-		'inferSchema' option -  specifies whether Spark should try to infer the column type based on column value. Or we can define user-specified-schema using StructType and StructField & specify in schema option as above line. If the inferSchema option is false and no schema is provided, Spark will assume the data type of all the columns to be the string type.
+	"inferSchema" option -  specifies whether Spark should try to infer the column type based on column value. Or we can define user-specified-schema using StructType and StructField & specify in schema option as above line. If the inferSchema option is false and no schema is provided, Spark will assume the data type of all the columns to be the string type.
 		
-	//Verify correctness of the data:
-		'PERMISSIVE (default): nulls are inserted for fields that could not be parsed correctly.'
+	"Verify correctness of the data":
+		'PERMISSIVE (default)': nulls are inserted for fields that could not be parsed correctly.
 			We can add a special column _corrupt_record, which does not exist in the data. This column captures rows that did not parse correctly. To Query which rows not parsed correctly we can use the below codes:
 				>> spark.read.schema(schema).csv(file).filter($"_corrupt_record".isNotNull).count()
 				>> spark.read.schema(schema).csv(file).select("_corrupt_record").show()
@@ -1536,19 +1537,16 @@ spark -version
 	'JSON file'
 		>> val orders = sqlContext.load("/user/hduser/retail_db_json/orders", "json")
 			orders: org.apache.spark.sql.DataFrame = [order_customer_id: bigint, order_date: string ... 2 more fields]
-
-	// JSON Common Options -> allowComments, multiLine, samplingRatio  	
+		"JSON Common Options" -> allowComments, multiLine, samplingRatio  	
 		>> val movies5 = spark.read.option("multiLine","true").option("inferSchema","true").schema(movieSchema2).json("<path>/movies.json")  //specify a schema to override the Sparks inferring schema.
-		'When a column data type specified in the schema doesn’t match up with the value in the JSON file?, it will set the value of all the columns in that row to null. Instead of getting null values, you can tell Spark to fail fast'
-		
+	'When a column data type specified in the schema doesn’t match up with the value in the JSON file?, it will set the value of all the columns in that row to null. Instead of getting null values, you can tell Spark to fail fast'
 		>> val movies8 = spark.read.option("mode","failFast").schema(badMovieSchema).json("<path>/movies.json")
-	  Spark will throw a RuntimeException when executing an action
-		
+	Spark will throw a RuntimeException when executing an action
 		>> movies8.show(5)
 			ERROR Executor: Exception in task 0.0 in stage 3.0 (TID 3) java.lang.RuntimeException: Failed to parse a value for data type BooleanType (current token: VALUE_STRING).
 
-	//Creating DataFrames from JDBC:
-		'For Spark to connect to an RDBMS, it must have access to the JDBC driver JAR file at runtime. Therefore, you need to add the location of a JDBC driver to the Spark classpath.'
+	'Creating DataFrames from JDBC':
+		For Spark to connect to an RDBMS, it must have access to the JDBC driver JAR file at runtime. Therefore, you need to add the location of a JDBC driver to the Spark classpath.
 		//Main Options for a JDBC Data Source - url, dbtable, driver
 		
 		>> val mysqlURL= "jdbc:mysql://localhost:3306/sakila"
@@ -1560,8 +1558,8 @@ spark -version
 						.option("password","<password>")
 						.load()
 
-	//Creating DataFrame from S3:
-		'There are no S3 libraries in the core Apache Spark project. Spark uses libraries from Hadoop to connect to S3.'
+	'Creating DataFrame from S3':
+		There are no S3 libraries in the core Apache Spark project. Spark uses libraries from Hadoop to connect to S3.
 
 		1. Specify the credentials in a configuration file, such as core-site.xml: 
 			<property>
@@ -1573,11 +1571,11 @@ spark -version
     			<value>...</value>
 			</property>
 
-		#Initialize the session
+		Initialize the session
 			>> import org.apache.hadoop.fs.{FileSystem, Path}
 			>> import org.apache.hadoop.conf.Configuration
 			>> val spark = SparkSession.builder.appName("SUsingS3").getOrCreate()
- 		#Create an RDD from a file in S3 using the s3n protocol
+ 		Create an RDD from a file in S3 using the s3n protocol
 			>> val s3nRdd = sc.textFile("s3n://sparkour-data/random_numbers.txt")
 
 		2. AWS credentials inline in the S3N URI:
@@ -1593,7 +1591,7 @@ spark -version
 			>> myRDD.count
 
 
-//Working with Structured Operations"
+`Working with Structured Operations`
 
 
 https://spoddutur.github.io/spark-notes/distribution_of_executors_cores_and_memory_for_spark_application.html
@@ -1606,7 +1604,3 @@ Kafka
 https://medium.com/@durgaswaroop/a-practical-introduction-to-kafka-storage-internals-d5b544f6925f
 
 http://apachesparkbook.blogspot.com/search/label/a54%7C%20collectAsMap%28%29 --> mini basics
-=====
-partition and shuffle in spark
-https://medium.com/parrot-prediction/partitioning-in-apache-spark-8134ad840b0
-https://medium.com/@manuelmourato25/how-spark-dataframe-shuffling-can-hurt-your-partitioning-28d05fdcb6fa
