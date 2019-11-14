@@ -251,6 +251,11 @@ yarn-daemon.sh start resourcemanager
 mr-jobhistory-daemon.sh start historyserver
 
 ==============================================================================================
+`HDFS`
+
+ -getmerge command in Hadoop is for merging files existing in the HDFS file system into a single file in the local file system.
+ 	hdfs dfs –getmerge [-nl] <src> <localdest>
+ 	
 
  hadoop fs -mkdir -p /user/hduser/
  hadoop fs -mkdir -p /user/hduser/hadoop
@@ -517,6 +522,11 @@ set hive.cli.print.header=true;
 Header Info:  "ISBN";"BookTitle";"BookAuthor";"Year";"Publisher";"ImageURLS";"ImageURLM";"ImageURLL"
 Value : 	  "0195153448";"Classical Mythology";"Mark P. O. Morford";"2002";"Oxford University Press";"http://images.amazon.com/images/P/0195153448.01.THUMBZZZ.jpg";"http://images.amazon.com/images/P/0195153448.01.MZZZZZZZ.jpg";"http://images.amazon.com/images/P/0195153448.01.LZZZZZZZ.jpg"
 
+Default Delimiters:
+ Each fields are delimited by CTRL-A (ie Octal \001).
+ If a field is a complex type(such as ARRAY, STRUCT or MAP) containing Primitive Type(like INT, STRING), then each value inside the complex type is delimited by CTRL-B (\002)
+ In a map, Key & Value is always delimited by ^C)
+
 'Create normal table'
 	CREATE TABLE BOOKS(ISBN INT,BOOKTITLE STRING,BOOKAUTHOR STRING,YEAR INT,PUBLISHER STRING,IMAGEURLS STRING,IMAGEURLM STRING,IMAGEURLL STRING) 
 	ROW FORMAT DELIMITED 
@@ -559,6 +569,7 @@ Value : 	  "0195153448";"Classical Mythology";"Mark P. O. Morford";"2002";"Oxfor
 
 Types - 'COMPACT Index'- stores the pair of indexed column’s value and its blockid. 
 	  - 'BITMAP Index' - stores the combination of indexed column value and list of rows as a bitmap
+
 	'Creating Index'
 		CREATE INDEX index_name
 		ON TABLE table_name (columns,....)
@@ -578,7 +589,7 @@ Types - 'COMPACT Index'- stores the pair of indexed column’s value and its blo
 	bit_indx                movies                  mid                     movies__movies_bit_indx__       bitmap
 	--
 	'Drop Index'
-	DROP INDEX IF EXISTS BIT_INDX ON MOVIES;
+		DROP INDEX IF EXISTS BIT_INDX ON MOVIES;
 	
 	'When not to use index in hive:'
 		Indexes are advised to build on the columns on which you frequently perform operations.
@@ -598,6 +609,7 @@ Types - 'COMPACT Index'- stores the pair of indexed column’s value and its blo
 	mid                     int                     1                       193886 	                 0                       96484                                                                                                                      from deserializer
 
 # https://cwiki.apache.org/confluence/display/Hive/StatsDev
+
 
 ==============
 `FILE FORMATS`
@@ -663,6 +675,24 @@ Types - 'COMPACT Index'- stores the pair of indexed column’s value and its blo
 		MSCK REPAIR TABLE BOOKS_PART;
 		OR 
 		ALTER TABLE BOOKS_PART ADD PARTITION (YR=2004) LOCATION '/user/hduser/external/books_part/yr=2004';
+
+	'Error statement' in MSCK execution:
+
+	    0: jdbc:hive2:> msck repair table NCVDCH4_CVDP_INVALID_DATA_SEC_HTE;
+		Error: Error while processing statement: FAILED: Execution Error, return code 1 from org.apache.hadoop.hive.ql.exec.DDLTask (state=08S01,code=1)
+
+		0: jdbc:hive2:> set hive.msck.path.validation;
+		+----------------------------------+--+
+		|               set                |
+		+----------------------------------+--+
+		| hive.msck.path.validation=throw  |
+		+----------------------------------+--+
+		
+		To resolve the above issue follow the below:
+		0: jdbc:hive2> set hive.msck.path.validation=ignore;
+		
+		0: jdbc:hive2> msck repair table cvdp_dev.NCVDCH4_CVDP_INVALID_DATA_SEC_HTE;
+		No rows affected (0.609 seconds)
 
 	'Adding multiple partitions in single query'
 		ALTER TABLE EMPLOYEE ADD PARTITION (year=2005) PARTITION (year=2006) PARTITION (year=2008) PARTITION (year=2009) PARTITION (year=2010);
@@ -795,6 +825,187 @@ We can alter the partition in the static partition
 	Big table will result in 10 mappers if the no of bucket is 10. 
 	only matching bucket of all small tables are replicated on to each mapper and then the join will takes place on each mapper. 
 	Since the records are already sorted, only matching buckets are joined - this task requires no reducers and completes faster.
+
+====================
+`Built-in Table-Generating Functions (UDTF)`
+	Normal user-defined functions, such as concat(), len() take in a single input row and output a single output row. In contrast, table-generating functions transform a single input row to multiple output rows.
+
+'EXPLODE' -> (array and map)
+	Lateral view explode, explodes the array data into multiple rows. Like a cross join in the example below:
+
+	CREATE TABLE test_l7 (person string, phones array<int> ) row format delimited fields terminated by ',' STORED AS TEXTfile LOCATION '/hdfs/path/testing_l7';
+	 
+	insert into test_l7 select  'lingesh' , ARRAY( 96771 , 96771090 , 3 );
+	insert into test_l7 select  'prashanth' , ARRAY( 86771 , 971090 , 2 );
+	insert into test_l7 select  'sudharsan' , ARRAY( 76771 , 96770 , 1 );
+	insert into test_l7 select  'ramesh' , ARRAY( 66771 , 960 , 8783 );
+	insert into test_l7 select  'subash' , ARRAY( 56771 , 96 , 83783 );
+	insert into test_l7 select  'mani' , ARRAY( 46771 , 90 , 783 );
+
+	select * from test_l7;
+	+------------+---------------------------+
+	|   person   |          phones           |
+	+------------+---------------------------+
+	| prashanth  | [86771,971090,989838783]  |
+	| sudharsan  | [76771,96770,989837883]   |
+	| ramesh     | [66771,960,8783]          |
+	| subash     | [56771,96,83783]          |
+	| mani       | [46771,90,783]            |
+	| lingesh    | [96771,96771090,3]        |
+	| prashanth  | [86771,971090,2]          |
+	| sudharsan  | [76771,96770,1]           |
+	+------------+---------------------------+
+
+Applying a lateral view explode on the above table will expand the both person and phones & do a cross join, your final table will look like this:
+	
+	select person, Phone 
+	from test_l7 
+	lateral view explode(phones) pn as Phone;
+
+	+------------+------------+
+	|   person   |   phone    |
+	+------------+------------+
+	| prashanth  | 86771      |
+	| prashanth  | 971090     |
+	| prashanth  | 989838783  |
+	| sudharsan  | 76771      |
+	| sudharsan  | 96770      |
+	.
+	.
+	| sudharsan  | 76771      |
+	| sudharsan  | 96770      |
+	| sudharsan  | 1          |
+	+------------+------------+
+	24 rows selected (0.365 seconds)
+
+--------------------------------------------------------------------------------------------------------------------
+--------------------------------------------------------------------------------------------------------------------
+'POSEXPLODE' -> (array only)
+
+	CREATE TABLE testpos( person string, phones array<int>, country array<string> ) row format delimited fields terminated by ',' STORED AS TEXTfile  LOCATION 'path/hdfs/testpos';
+	 
+	insert into testpos select  'lingesh' , ARRAY(96771, 96771090, 3), ARRAY('IND','USA','CHN');
+	insert into testpos select  'prashanth' , ARRAY(86771, 971090, 2), ARRAY('NRI','AED','RSA');
+	insert into testpos select  'sudharsan' , ARRAY(76771, 96770, 1), ARRAY('DOG','CAT','PLI');
+	insert into testpos select  'ramesh' , ARRAY(66771, 960, 8783), ARRAY('BAR','RAP','JOK');
+	insert into testpos select  'subash' , ARRAY(56771, 96, 83783), ARRAY('DHL','CHN','BOM');
+	insert into testpos select  'mani' , ARRAY(46771, 90, 783), ARRAY('ISU','BOB');
+
+	select * from testpos;
+	+------------+---------------------+----------------------+
+	|   person   |       phones        |       country        |
+	+------------+---------------------+----------------------+
+	| lingesh    | [96771,96771090,3]  | ["IND","USA","CHN"]  |
+	| prashanth  | [86771,971090,2]    | ["NRI","AED","RSA"]  |
+	| sudharsan  | [76771,96770,1]     | ["DOG","CAT","PLI"]  |
+	| ramesh     | [66771,960,8783]    | ["BAR","RAP","JOK"]  |
+	| subash     | [56771,96,83783]    | ["DHL","CHN","BOM"]  |
+	| mani       | [46771,90,783]      | ["ISU","BOB"]        |
+	+------------+---------------------+----------------------+
+
+"POSEXPLODE gives you an index along with value when you expand any column, and then you can use this indexes to map values with each other as mentioned below."
+
+	SELECT person, pos_phone, phones_, pos_country, country_ <-- selecting the positional fields for reference
+	FROM testpos 
+	lateral view posexplode(phones) pn AS pos_phone , phones_ <-- produces (0, 96771)
+	lateral view posexplode(country) cn AS pos_country , country_ <-- produces (0, IND)
+	WHERE pos_phone == pos_country;  <-- join condition on the positional index values
+
+	+------------+------------+-----------+--------------+-----------+
+	|   person   | pos_phone  |  phones_  | pos_country  | country_  |
+	+------------+------------+-----------+--------------+-----------+
+	| lingesh    | 0          | 96771     | 0            | IND       |
+	| lingesh    | 1          | 96771090  | 1            | USA       |
+	| lingesh    | 2          | 3         | 2            | CHN       |
+	| prashanth  | 0          | 86771     | 0            | NRI       |
+	| prashanth  | 1          | 971090    | 1            | AED       |
+	| prashanth  | 2          | 2         | 2            | RSA       |
+	| sudharsan  | 0          | 76771     | 0            | DOG       |
+	| sudharsan  | 1          | 96770     | 1            | CAT       |
+	| sudharsan  | 2          | 1         | 2            | PLI       |
+	| ramesh     | 0          | 66771     | 0            | BAR       |
+	| ramesh     | 1          | 960       | 1            | RAP       |
+	| ramesh     | 2          | 8783      | 2            | JOK       |
+	| subash     | 0          | 56771     | 0            | DHL       |
+	| subash     | 1          | 96        | 1            | CHN       |
+	| subash     | 2          | 83783     | 2            | BOM       |
+	| mani       | 0          | 46771     | 0            | ISU       |
+	| mani       | 1          | 90        | 1            | BOB       |
+	+------------+------------+-----------+--------------+-----------+
+
+--------------------------------------------------------------------------------------------------------------------
+--------------------------------------------------------------------------------------------------------------------
+'INLINE (array of structs)'
+	Explodes an array of structs to multiple rows. Returns a row-set with N columns (N = number of top level elements in the struct).
+
+Create a table with struct type columns in it and insert corresponding values:
+
+	CREATE TABLE cvdp.test_st ( person struct<id : int, name: string, organization : string>, activity struct<id : int, name: string>, cas struct<caseid : int, casename: string, caseorganization : string> )
+	ROW FORMAT SERDE 'org.apache.hadoop.hive.ql.io.orc.OrcSerde' STORED AS INPUTFORMAT 'org.apache.hadoop.hive.ql.io.orc.OrcInputFormat'  OUTPUTFORMAT  'org.apache.hadoop.hive.ql.io.orc.OrcOutputFormat' 
+	LOCATION '/hdfs/path/testing_st' ;
+
+"NAMED_STRUCT is another function used to insert a value maually on array(struct<>) type columns"
+	INSERT INTO test_st SELECT NAMED_STRUCT('id',1,'name', 'pras', 'organization', 'it'),  NAMED_STRUCT('id',2,'name', 'pras2'), NAMED_STRUCT('caseid',3,'casename', 'pras3', 'caseorganization', 'it3') ;
+
+Actual data in the table is as below:
+	SELECT * FROM test_st;
+	+---------------------------------------------+--------------------------+----------------------------------------------------+
+	|                   person                    |         activity         |                        cas                         |
+	+---------------------------------------------+--------------------------+----------------------------------------------------+
+	| {"id":1,"name":"pras","organization":"it"}  | {"id":2,"name":"pras2"}  | {"caseid":3,"casename":"pras3","caseorganization":"it3"} |
+	+---------------------------------------------+--------------------------+----------------------------------------------------+
+	1 row selected (1.115 seconds)
+
+Use Inline function to flatten the structure:
+ 
+	SELECT pn.* , an.* , cn.* from test_st
+	LATERAL VIEW INLINE(array(person)) pn
+	LATERAL VIEW INLINE(array(activity)) an
+	LATERAL VIEW INLINE(array(cas)) cn;
+	+-----+-------+---------------+-----+--------+---------+-----------+-------------------+
+	| id  | name  | organization  | id  |  name  | caseid  | casename  | caseorganization  |
+	+-----+-------+---------------+-----+--------+---------+-----------+-------------------+
+	| 1   | pras  | it            | 2   | pras2  | 3       | pras3     | it3               |
+	+-----+-------+---------------+-----+--------+---------+-----------+-------------------+
+
+--------------------------------------------------------------------------------------------------------------------
+--------------------------------------------------------------------------------------------------------------------
+'JSON_TUPLE'
+	It takes a set of names (keys) and a JSON string, and returns a tuple of values using one function. This is much more efficient than calling GET_JSON_OBJECT to retrieve more than one key from a single JSON string.
+
+Example table has a json type in a column which is stored as string datatype:
+
+select cvdpx3_raw_x from NCVDPX3_ETISIDS_PART_NUM_PII_HTE limit 2;
+	+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+--+
+	|                                                                                                                           cvdpx3_raw_x                                                                                                                            |
+	+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+--+
+	| {"isConfig":"false","identifier":"\"F163\"","session_Open_Local":"\"2018-04-03T13:58:27+02:00\"","session_Open_UTC":"\"2018-04-03T13:58:27+02:00\"","ecu_name":"\"BCMB\"","VIN":"\"1FA6P8CF0F5360021\"","partNumber":"3","didType":"\"ECU_DIAGNOSTIC_SPEC\""}     |
+	| {"isConfig":"false","identifier":"\"F110\"","session_Open_Local":"\"2018-04-03T13:58:27+02:00\"","session_Open_UTC":"\"2018-04-03T13:58:27+02:00\"","ecu_name":"\"ABS\"","VIN":"\"1FA6P8CF0F5360021\"","partNumber":"\"DSGR3C-2C219-BA\"","didType":"\"OTHER\""}  |
+	+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+--+
+
+select a.cvdpx3_sha_k, b.* from NCVDPX3_ETISIDS_PART_NUM_PII_HTE a lateral view json_tuple(a.cvdpx3_raw_x, 'identifier', 'ecu_name') b as f1, f2 limit 2;
+	+-------------------------------------------------------------------+---------+---------+--+
+	|                           cvdpx3_sha_k                            |   f1    |   f2    |
+	+-------------------------------------------------------------------+---------+---------+--+
+	| 0116c2761be5c61020d5205e737eec4385581bb260f7f0ee3a50e98298a2249b  | "F163"  | "BCMB"  |
+	| 014918d61cd288be0d61ff9bbb4feb6c3746129fb5af91c53b98a09e3164f981  | "F110"  | "ABS"   |
+	+-------------------------------------------------------------------+---------+---------+--+
+
+'get_json_object' <-- general string function
+	
+The above desired output can be formed using this function which has more lines and needs to be called everytime to get every sinlge value from JSON.
+
+select a.cvdpx3_sha_k, get_json_object(a.cvdpx3_raw_x, '$.identifier') as f1 , get_json_object(a.cvdpx3_raw_x, '$.ecu_name') as f2 from NCVDPX3_ETISIDS_PART_NUM_PII_HTE a limit 2;
+	+-------------------------------------------------------------------+---------+---------+--+
+	|                           cvdpx3_sha_k                            |   f1    |   f2    |
+	+-------------------------------------------------------------------+---------+---------+--+
+	| 0116c2761be5c61020d5205e737eec4385581bb260f7f0ee3a50e98298a2249b  | "F163"  | "BCMB"  |
+	| 014918d61cd288be0d61ff9bbb4feb6c3746129fb5af91c53b98a09e3164f981  | "F110"  | "ABS"   |
+	+-------------------------------------------------------------------+---------+---------+--+
+	2 rows selected (0.135 seconds)
+
+
+
 
 =============================================================================
 `SCALA`
@@ -1214,6 +1425,39 @@ spark -version -> to find the version of the spark
 						.option("user", "<username>")
 						.option("password","<password>")
 						.load()
+	'Creating DataFrames from .db file using JDBC and panda'
+
+	Add additional/necessary jars if required by the following methods:
+
+	1. /etc/spar/conf/spark-defaults.conf file setup
+		spark.driver.extraClassPath = C:/tmp/vsAngular2/spark/bin/sqlite-jdbc-3.8.7.jar
+		spark.executor.extraClassPath = C:/tmp/vsAngular2/spark/bin/sqlite-jdbc-3.8.7.jar
+
+	2. If you want to add a .jar to the classpath after you have entered spark-shell, use :require. Like:
+		scala> :require /path/to/file.jar
+		Added '/path/to/file.jar' to classpath.
+
+	3. While initializing spark shell itself
+		./spark-shell --jars pathOfjarsWithCommaSeprated
+
+	Using panda method:
+		import sqlite3
+		import pandas as pd
+		db_path = '/tmp/RSM/InterpidWivi/V362.db'
+		query = "SELECT name FROM sqlite_master WHERE type='table';" <-- to list the tables in that .db file
+		conn = sqlite3.connect(db_path)
+		a_pandas_df = pd.read_sql_query(query, conn)
+		a_spark_df = sqlContext.createDataFrame(a_pandas_df)
+
+	Using jdbc method:
+		val df = spark.read.format("jdbc").options(
+	  		Map(
+	   		 "url" -> "jdbc:sqlite:/tmp/RSM/InterpidWivi/V362.db",
+	    	 "dbtable" -> "channels;",
+	   		 "driver" -> "org.sqlite.JDBC")).load()
+
+
+
 
 	'Creating DataFrame from S3':
 		There are no S3 libraries in the core Apache Spark project. Spark uses libraries from Hadoop to connect to S3.
