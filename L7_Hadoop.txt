@@ -253,38 +253,48 @@ mr-jobhistory-daemon.sh start historyserver
 ==============================================================================================
 `HDFS`
 
- -getmerge command in Hadoop is for merging files existing in the HDFS file system into a single file in the local file system.
- 	hdfs dfs –getmerge [-nl] <src> <localdest>
- 	
+'-getmerge' command in Hadoop is for merging files existing in the HDFS file system into a single file in the local file system.
+	hdfs dfs –getmerge [-nl] <src> <localdest>
 
- hadoop fs -mkdir -p /user/hduser/
- hadoop fs -mkdir -p /user/hduser/hadoop
+ 
+'list the namenode and datanodes of a cluster from any node'
 
-[hduser@master ~]$ hadoop fs -df hdfs:/
-Filesystem                  Size   Used    Available  Use%
-hdfs://master:54310  36870701056  90112  23589879808    0%
+	>hdfs dfsadmin -report
+	>hdfs getconf -confKey fs.defaultFS
+	 --> hdfs://hdd2cluster
+	>hdfs getconf -namenodes
+	-->hpchdd2.hpc.ford.com hpchdd2x.hpc.ford.com
+	> hdfs getconf -secondaryNamenodes
+	-->Incorrect configuration: secondary namenode address dfs.namenode.secondary.http-address is not configured.
 
-Changing the replication factor of a file:
-hadoop fs -setrep -w 2 <filename>
 
-Check whether namenode in safemode and leave safe mode:
-hdfs dfsadmin -safemode get
-hdfs dfsadmin -safemode leave
+'to list the total size of the hdfs cluster'
+	> hadoop fs -df hdfs:/
+	Picked up JAVA_TOOL_OPTIONS: -Xmx1024m
+	Filesystem                      Size              Used        Available  Use%
+	hdfs://hdd2cluster  2231764506501120  1876979249534162  343133050934542   84%
 
-Fix corrupt HDFS Files:
+'Changing the replication factor of a file:'
+	hadoop fs -setrep -w 2 <filename>
+
+'Check whether namenode in safemode and leave safe mode:'
+	hdfs dfsadmin -safemode get
+	hdfs dfsadmin -safemode leave
+
+'Fix corrupt HDFS Files:'
 		hdfs fsck /  (or "hdfs fsck / | egrep -v '^\.+$' | grep -v eplica")
 	This will list the corrupt HDFS blocks:
 		hdfs fsck -list-corruptfileblocks
 	Once you find a file that is corrupt
 		hdfs fsck /path/to/corrupt/file -locations -blocks -files
 		hdfs fs -rm /path/to/file/with/permanently/missing/blocks
-(or)
-	bin/hadoop fsck / -delete
+	(or)
+		bin/hadoop fsck / -delete
 
-To list the property/parameter value set on hdfs:
+'To list the property/parameter value set on hdfs:'
 	hdfs getconf -confKey fs.defaultFS
 
-//To Investigate on articular application run on yarn providing jobhistory server started:
+'To Investigate on particular application run on yarn providing jobhistory server started:'
 	Open the YARN UI, and inspect the dashboard of recent jobs for that ID 
 	(OR)
   	yarn application -status <application_1496499143480_0003>
@@ -1004,6 +1014,74 @@ select a.cvdpx3_sha_k, get_json_object(a.cvdpx3_raw_x, '$.identifier') as f1 , g
 	+-------------------------------------------------------------------+---------+---------+--+
 	2 rows selected (0.135 seconds)
 
+====================
+`SET PARAMETERS - HIVE`
+
+"Eliminates map and Reduce jobs" - Hive queries can utilize fetch task (directly read from disk), which can avoid the overhead of starting MapReduce job.
+	
+	'hive.fetch.task.conversion': This parameter controls which kind of simple query can be converted to a single fetch task, thus eliminating Map jobs.
+	
+		It was added in Hive 0.10 per HIVE-2925. 
+	    Value "none" is added in Hive 0.14 to disable this feature, per HIVE-8389.
+	    Value "minimal" means SELECT *, FILTER on partition columns (WHERE and HAVING clauses), LIMIT only.
+	    Value "more" means SELECT, FILTER, LIMIT only (including TABLESAMPLE, virtual columns)."more" can take any kind of expressions in the SELECT clause, including UDFs.
+
+	    We can see "Fetch Operator" being used in explain plans under "STAGE PLANS" section if this parameter is enabled. 
+	    "NOTE: fetch can not utilize the parallelism of MapReduce framework."
+
+	'hive.fetch.task.conversion.threshold' : this parameter controls input threshold (in bytes) for applying hive.fetch.task.conversion
+											 The default value was changed in Hive 0.14 to 1GB(1073741824). To disable this feature set the values as -1.
+		
+		If hive.fetch.task.conversion.threshold is less than the table size, it will use MapReduce Job (in otherwords, if table size is greater than 1G (defaultvalue) use Mapreduce instead of Fetch task.)
+
+
+    'hive.fetch.task.aggr': Eleminates the reduce job when using "aggregation queries with no group-by clause" (for example, select count(*) from src) execute final aggregations in a single reduce task. 
+    						If this parameter is set to true, Hive delegates the final aggregation stage to a fetch task, possibly decreasing the query time.
+
+	    > set hive.fetch.task.aggr; 
+		+-----------------------------+--+
+		|             set             |
+		+-----------------------------+--+
+		| hive.fetch.task.aggr=false  |		<-- initial value is false
+		+-----------------------------+--+
+		
+	    > select count(*) from NCVDPX3_ETISIDS_PART_NUM_PII_HTE;
+		--------------------------------------------------------------------------------
+		        VERTICES      STATUS  TOTAL  COMPLETED  RUNNING  PENDING  FAILED  KILLED
+		--------------------------------------------------------------------------------
+		Map 1 ..........   SUCCEEDED      5          5        0        0       0       0
+		Reducer 2 ......   SUCCEEDED      1          1        0        0       0       0  <-- Usgae of reducers 
+		--------------------------------------------------------------------------------
+		VERTICES: 02/02  [==========================>>] 100%  ELAPSED TIME: 7.43 s
+		--------------------------------------------------------------------------------
+		+------+--+
+		| _c0  |
+		+------+--+
+		| 134  |
+		+------+--+
+		1 row selected (8.156 seconds)
+		
+		> set hive.fetch.task.aggr=true; <-- enabling by setting the value to true
+		No rows affected (0.004 seconds)
+		
+		> select count(*) from NCVDPX3_ETISIDS_PART_NUM_PII_HTE;
+		--------------------------------------------------------------------------------
+		        VERTICES      STATUS  TOTAL  COMPLETED  RUNNING  PENDING  FAILED  KILLED
+		--------------------------------------------------------------------------------
+		Map 1 ..........   SUCCEEDED      5          5        0        0       0       0
+		--------------------------------------------------------------------------------	<-- No reducers used 
+		VERTICES: 01/01  [==========================>>] 100%  ELAPSED TIME: 11.44 s
+		--------------------------------------------------------------------------------
+		+------+--+
+		| _c0  |
+		+------+--+
+		| 134  |
+		+------+--+
+		1 row selected (12.189 seconds)
+
+	"Note, if the query has "group-by", it can not use this feature"
+
+	
 
 
 
@@ -1425,8 +1503,8 @@ spark -version -> to find the version of the spark
 						.option("user", "<username>")
 						.option("password","<password>")
 						.load()
-	'Creating DataFrames from .db file using JDBC and panda'
 
+	'Creating DataFrames from .db file using JDBC and panda'
 	Add additional/necessary jars if required by the following methods:
 
 	1. /etc/spar/conf/spark-defaults.conf file setup
@@ -1497,8 +1575,35 @@ spark -version -> to find the version of the spark
 .......
 ........
 
+`Spark Use cases - PYSPARK and Spark-Scala`
 
+'how to rename or delete a file from HDFS inside spark' 
+	package com.bigdataetl
+    import org.apache.hadoop.fs.{FileSystem, Path},
+    import org.apache.spark.sql.SparkSession
+    object Test extends App {
+      val spark = SparkSession.builder.master("local[*]").appName("BigDataETL").getOrCreate()
+       -- Create FileSystem object from Hadoop Configuration
+      val fs = FileSystem.get(spark.sparkContext.hadoopConfiguration)
+       -- Base path where Spark will produce output file
+      val basePath = "/bigtadata_etl/spark/output"
+      val newFileName = "renamed_spark_output"
+       -- Change file name from Spark generic to new one
+      fs.rename(new Path(s"$basePath/part-00000"), new Path(s"$basePath/$newFileName"))
+       --Delete directories recursively using FileSystem class
+	  fs.delete(new Path("/bigdata_etl/data"), true)
+	  -- Delete using Scala DSL
+	  s"hdfs dfs -rm -r /bigdata_etl/data/" !
+	  -- Delete file
+	  fs.removeAcl(new Path("/bigdata_etl/data/file_to_delete.dat"))
+	  -- Delete using Scala DSL
+	  s"hdfs dfs -rm /bigdata_etl/data/file_to_delete.dat" !
+	  }
 
+'How to concatenate a date to a filename in pyspark'
+	import datetime
+	currentdate = datetime.datetime.now().strftime("%Y-%m-%d-%H:%M:%S") 
+	counts.coalesce(1).write.csv("/home/packt/Downloads/myresults3-" + currentdate + ".csv")
 
 
 
