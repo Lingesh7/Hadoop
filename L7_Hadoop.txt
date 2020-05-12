@@ -256,9 +256,24 @@ mr-jobhistory-daemon.sh start historyserver
 '-getmerge' command in Hadoop is for merging files existing in the HDFS file system into a single file in the local file system.
 	hdfs dfs –getmerge [-nl] <src> <localdest>
 
- 
-'list the namenode and datanodes of a cluster from any node'
+'-stat' command will return filenames only 
+	hdfs dfs -stat "%n" my/path/a*		<-- without "%n" shows only the date and time of the file creation 
 
+'list all the file names match with a word'
+	hdfs dfs -ls /testing/project/CVDP/CVDPDEV/Workflow/properties/java/vendor* | awk '{print $8}' | while read f; do hdfs dfs -cat $f | grep SFTP && echo $f; done
+		--> connectType=SFTP
+		--> /testing/project/CVDP/CVDPDEV/Workflow/properties/java/vendorEMSimBlngData.properties
+		--> Picked up JAVA_TOOL_OPTIONS: -Xmx1024m
+		--> connectType=SFTP
+		--> /testing/project/CVDP/CVDPDEV/Workflow/properties/java/vendorFordTrialReports.properties
+		--> Picked up JAVA_TOOL_OPTIONS: -Xmx1024m
+		--> Picked up JAVA_TOOL_OPTIONS: -Xmx1024m
+		--> connectType=SFTP
+		--> /testing/project/CVDP/CVDPDEV/Workflow/properties/java/vendorIntrepidWivi.properties
+		--> Picked up JAVA_TOOL_OPTIONS: -Xmx1024m
+		--> connectType=SFTP
+
+'list the namenode and datanodes of a cluster from any node'
 	>hdfs dfsadmin -report
 	>hdfs getconf -confKey fs.defaultFS
 	 --> hdfs://hdd2cluster
@@ -270,9 +285,35 @@ mr-jobhistory-daemon.sh start historyserver
 
 'to list the total size of the hdfs cluster'
 	> hadoop fs -df hdfs:/
-	Picked up JAVA_TOOL_OPTIONS: -Xmx1024m
-	Filesystem                      Size              Used        Available  Use%
-	hdfs://hdd2cluster  2231764506501120  1876979249534162  343133050934542   84%
+		Picked up JAVA_TOOL_OPTIONS: -Xmx1024m
+		Filesystem                      Size              Used        Available  Use%
+		hdfs://hdd2cluster  2231764506501120  1876979249534162  343133050934542   84%
+
+	>  hadoop fs -df -h
+		Picked up JAVA_TOOL_OPTIONS: -Xmx1024m
+		Filesystem           Size   Used  Available  Use%
+		hdfs://hdd2cluster  2.0 P  1.8 P    182.8 T   91%
+
+	> hdfs dfsadmin -report
+		Picked up JAVA_TOOL_OPTIONS: -Xmx1024m
+		Configured Capacity: 2231764506501120 (1.98 PB)
+		Present Capacity: 2229593096735457 (1.98 PB)
+		DFS Remaining: 201308280757920 (183.09 TB)
+		DFS Used: 2028284815977537 (1.80 PB)
+		DFS Used%: 90.97%
+		Replicated Blocks:
+		        Under replicated blocks: 0
+		        Blocks with corrupt replicas: 0
+		        Missing blocks: 0
+		        Missing blocks (with replication factor 1): 0
+		        Low redundancy blocks with highest priority to recover: 0
+		        Pending deletion blocks: 138
+		Erasure Coded Block Groups:
+		        Low redundancy block groups: 0
+		        Block groups with corrupt internal blocks: 0
+		        Missing block groups: 0
+		        Low redundancy blocks with highest priority to recover: 0
+		        Pending deletion blocks: 0
 
 'Changing the replication factor of a file:'
 	hadoop fs -setrep -w 2 <filename>
@@ -300,7 +341,38 @@ mr-jobhistory-daemon.sh start historyserver
   	yarn application -status <application_1496499143480_0003>
  	yarn logs -applicationId <application_1496499143480_0003> | more
 
+'to get the quota of a directory for HDFS'
+	> hdfs dfs -count -q -h -v  /user/cvdpdevp
+	
+	       QUOTA       REM_QUOTA     SPACE_QUOTA REM_SPACE_QUOTA    DIR_COUNT   FILE_COUNT       CONTENT_SIZE PATHNAME
+	        none             inf           750 G         749.0 G          272          614            350.8 M /user/cvdpdevp
+
+'Find how many columns/fields using IFS - available in a CSV file'
+	
+	awk -F ',' '{print NR,NF,$0}' file_test.txt <-- prints line number, count of columns, entire line ‘print $0’ means print the current line) 
+	awk -F ',' 'NF != 31' file_test.txt <-- prints entire column matching the condition (in place od NF we can also specify $1 or $7 etc)
+
+	Reference for basi awk <--- https://www.gnu.org/software/gawk/manual/html_node/Very-Simple.html
+
+'Below is the query to get the path and file_count for each path. Query has to be update with respect to the source.'
+
+	INSERT OVERWRITE DIRECTORY 'hdfs://hdp2cluster/tmp/spedipin/CitySolutions/'
+	ROW FORMAT DELIMITED
+	FIELDS TERMINATED BY '\t'
+	STORED AS TEXTFILE
+	SELECT reverse(substr(reverse(path),instr(reverse(path),'/'),length(path))) as files_path,count(1) as number_of_files 
+	FROM fsimage_txt_delimited_partitioned  
+	WHERE date_partition='20200327' and path like '%CitySolutions%' and fsize < 31457280 group by reverse(substr(reverse(path),instr(reverse(path),'/'),length(path)));
+
 ================================================================
+`MapReduce`
+
+The maximum number of attempts to run a task is controlled by the mapreduce.map.maxattempts property for map tasks and mapreduce.reduce.maxattempts for reduce tasks
+
+
+
+================================================================
+
 1. Discover the exact DB2 Version (and FixPack Level):
 https://www-01.ibm.com/support/docview.wss?uid=swg21642926
 
@@ -835,6 +907,21 @@ We can alter the partition in the static partition
 	Big table will result in 10 mappers if the no of bucket is 10. 
 	only matching bucket of all small tables are replicated on to each mapper and then the join will takes place on each mapper. 
 	Since the records are already sorted, only matching buckets are joined - this task requires no reducers and completes faster.
+
+'For Historical LOAD': If any historical load occurs (Join single or multiple tables or one hive table to another table load) in your feature through one time Hive script, 
+	please include the below hive settings to avoid the memory issue/script interruption in middle.
+
+	set tez.am.resource.memory.mb=8192;
+	set hive.exec.orc.split.strategy=BI;
+	set hive.orc.cache.use.soft.references=true;
+
+	set hive.exec.orc.split.strategy=BI;
+
+	if your source table is orc and splits calculation takes too long time need to add above settings
+
+	set hive.orc.cache.use.soft.references=true;
+
+	Setting this to true can help avoid out-of-memory issues under memory pressure (in some cases) at the cost of slight unpredictability in overall query performance.
 
 ====================
 `Built-in Table-Generating Functions (UDTF)`
