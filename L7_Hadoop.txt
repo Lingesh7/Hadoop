@@ -364,6 +364,19 @@ mr-jobhistory-daemon.sh start historyserver
 	FROM fsimage_txt_delimited_partitioned  
 	WHERE date_partition='20200327' and path like '%CitySolutions%' and fsize < 31457280 group by reverse(substr(reverse(path),instr(reverse(path),'/'),length(path)));
 
+'HDFS MOVE COMMAND FOR FILES MORE THAN X DAYS'
+
+	hdfs dfs -ls /project/CVDP/CVDPDEV/Archive/Completed/  | awk '{ if ((($6 < "'"2020-05-05"'" ))) system("hdfs dfs -mv " $8 " " "/project/CVDP/CVDPDEV/Staging/Project/Input")}'
+
+	where /project/CVDP/CVDPDEV/Archive/Completed/  is Source folder & /project/CVDP/CVDPDEV/Staging/Project/Input is Destination folder
+	And the highlighted date is the condition which results in moving only the files which are older than 05th May.
+
+	Execute commands with awk system function - here we are moving the files from /path to /path2 by altering the file name with substr fn
+	hdfs dfs -stat "%n" /path/ | awk '{ system("hdfs dfs -mv /path/" $1 " " "/path2/" substr($1,6) ) }'
+
+'Operations on Variable:'  --> https://www.tldp.org/LDP/Bash-Beginners-Guide/html/sect_10_03.html
+
+
 ================================================================
 `MapReduce`
 
@@ -644,6 +657,9 @@ Default Delimiters:
 
 	2. Drop external table (keep data & remove only the structure frm hive)
 		DROP TABLE external_hive_table;
+
+	3. Drop an external table along with data (Hive 3)
+		TBLPROPERTIES ('external.table.purge'='true'); <<- When this property set for an external table,The table is removed from Hive Metastore and the data stored externally.
 
 'Indexing in Hive'
 	Whenever we perform a query on a table that has an index, there is no need for the query to scan all the rows in the table. Further, it checks the index first and then goes to the particular column and performs the operation.
@@ -1168,7 +1184,15 @@ select a.cvdpx3_sha_k, get_json_object(a.cvdpx3_raw_x, '$.identifier') as f1 , g
 
 	"Note, if the query has "group-by", it can not use this feature"
 
-	
+	'hive.strict.managed.tables' - mode in Hive 3 which enforces that all managed(internal) tables are transactional (both full or insertonly tables allowed). 
+									Non-transactional tables, as well as non-native tables, must be created as external tables when this mode is enabled.
+
+		So altering the table from EXTERNAL to INTERNAL is not possible in Hive 3. it will throw below error:
+			--Error: Error while processing statement: FAILED: Execution Error, return code 1 from org.apache.hadoop.hive.ql.exec.DDLTask. 
+			--Unable to alter table. Table cvdp.ncvdpux_fordpass_appr_trn_recogn_tier_pii_hte failed strict managed table checks due to the following reason:
+			--Table is marked as a managed table but is not transactional. (state=08S01,code=1)
+
+	'hive.server2.logging.operation.enabled' - default true - When set to false it wont show operation logs (like info, warn)
 
 
 
@@ -1606,6 +1630,7 @@ spark -version -> to find the version of the spark
 		./spark-shell --jars pathOfjarsWithCommaSeprated
 
 	Using panda method:
+
 		import sqlite3
 		import pandas as pd
 		db_path = '/tmp/RSM/InterpidWivi/V362.db'
@@ -1614,14 +1639,33 @@ spark -version -> to find the version of the spark
 		a_pandas_df = pd.read_sql_query(query, conn)
 		a_spark_df = sqlContext.createDataFrame(a_pandas_df)
 
+		In cluster mode, the local directories used by the Spark executors and the Spark driver will be the local directories configured for 
+		YARN (Hadoop YARN config yarn.nodemanager.local-dirs). If the user specifies spark.local.dir, it will be ignored. 
+
+		In client mode, the Spark executors will use the local directories configured for YARN while the Spark driver will use those defined in spark.local.dir.
+		This is because the Spark driver does not run on the YARN cluster in client mode, only the Spark executors do.
+
+	The '--files' and '--archives' options support specifying file names with the numbr similar to Hadoop. 
+	For example, you can specify: --files localtest.txt#appSees.txt and this will upload the file you have locally named localtest.txt
+	into HDFS but this will be linked to by the name appSees.txt, and your application should use the name as appSees.txt to reference it when running on YARN.
+
 	Using jdbc method:
+	
+	spark-shell --jars /tmp/l7/scala/sqlite-jdbc-3.15.1.jar --files /tmp/RSM/V362.db#sqllite.db
+
 		val df = spark.read.format("jdbc").options(
-	  		Map(
-	   		 "url" -> "jdbc:sqlite:/tmp/RSM/InterpidWivi/V362.db",
-	    	 "dbtable" -> "channels;",
-	   		 "driver" -> "org.sqlite.JDBC")).load()
+		  Map(
+		    "url" -> "jdbc:sqlite:sqllite.db",
+		    "dbtable" -> "sqlite_master",
+		    "driver" -> "org.sqlite.JDBC")).load()
 
+		    val df = spark.read.format("jdbc").options(
+		  Map(
+		    "url" -> "jdbc:sqlite:V362.db",
+		    "dbtable" -> "main.channels",
+		    "driver" -> "org.sqlite.JDBC")).load()
 
+		sqlContext.read.format("jdbc").options(url ="jdbc:sqlite:c:/tmp/vsAngular2/data/test.db", driver="org.sqlite.JDBC", dbtable="employee").load().take(10) 
 
 
 	'Creating DataFrame from S3':
