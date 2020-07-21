@@ -259,20 +259,6 @@ mr-jobhistory-daemon.sh start historyserver
 '-stat' command will return filenames only 
 	hdfs dfs -stat "%n" my/path/a*		<-- without "%n" shows only the date and time of the file creation 
 
-'list all the file names match with a word'
-	hdfs dfs -ls /testing/project/CVDP/CVDPDEV/Workflow/properties/java/vendor* | awk '{print $8}' | while read f; do hdfs dfs -cat $f | grep SFTP && echo $f; done
-		--> connectType=SFTP
-		--> /testing/project/CVDP/CVDPDEV/Workflow/properties/java/vendorEMSimBlngData.properties
-		--> Picked up JAVA_TOOL_OPTIONS: -Xmx1024m
-		--> connectType=SFTP
-		--> /testing/project/CVDP/CVDPDEV/Workflow/properties/java/vendorFordTrialReports.properties
-		--> Picked up JAVA_TOOL_OPTIONS: -Xmx1024m
-		--> Picked up JAVA_TOOL_OPTIONS: -Xmx1024m
-		--> connectType=SFTP
-		--> /testing/project/CVDP/CVDPDEV/Workflow/properties/java/vendorIntrepidWivi.properties
-		--> Picked up JAVA_TOOL_OPTIONS: -Xmx1024m
-		--> connectType=SFTP
-
 'list the namenode and datanodes of a cluster from any node'
 	>hdfs dfsadmin -report
 	>hdfs getconf -confKey fs.defaultFS
@@ -347,13 +333,6 @@ mr-jobhistory-daemon.sh start historyserver
 	       QUOTA       REM_QUOTA     SPACE_QUOTA REM_SPACE_QUOTA    DIR_COUNT   FILE_COUNT       CONTENT_SIZE PATHNAME
 	        none             inf           750 G         749.0 G          272          614            350.8 M /user/cvdpdevp
 
-'Find how many columns/fields using IFS - available in a CSV file'
-	
-	awk -F ',' '{print NR,NF,$0}' file_test.txt <-- prints line number, count of columns, entire line ‘print $0’ means print the current line) 
-	awk -F ',' 'NF != 31' file_test.txt <-- prints entire column matching the condition (in place od NF we can also specify $1 or $7 etc)
-
-	Reference for basi awk <--- https://www.gnu.org/software/gawk/manual/html_node/Very-Simple.html
-
 'Below is the query to get the path and file_count for each path. Query has to be update with respect to the source.'
 
 	INSERT OVERWRITE DIRECTORY 'hdfs://hdp2cluster/tmp/spedipin/CitySolutions/'
@@ -364,6 +343,28 @@ mr-jobhistory-daemon.sh start historyserver
 	FROM fsimage_txt_delimited_partitioned  
 	WHERE date_partition='20200327' and path like '%CitySolutions%' and fsize < 31457280 group by reverse(substr(reverse(path),instr(reverse(path),'/'),length(path)));
 
+`AWK`
+'Find how many columns/fields using IFS - available in a CSV file'
+	
+	awk -F ',' '{print NR,NF,$0}' file_test.txt <-- prints line number, count of columns, entire line ‘print $0’ means print the current line) 
+	awk -F ',' 'NF != 31' file_test.txt <-- prints entire column matching the condition (in place od NF we can also specify $1 or $7 etc)
+
+	Reference for basi awk <--- https://www.gnu.org/software/gawk/manual/html_node/Very-Simple.html
+
+'list all the file names match with a word'
+	hdfs dfs -ls /testing/project/CVDP/CVDPDEV/Workflow/properties/java/vendor* | awk '{print $8}' | while read f; do hdfs dfs -cat $f | grep SFTP && echo $f; done
+		--> connectType=SFTP
+		--> /testing/project/CVDP/CVDPDEV/Workflow/properties/java/vendorEMSimBlngData.properties
+		--> Picked up JAVA_TOOL_OPTIONS: -Xmx1024m
+		--> connectType=SFTP
+		--> /testing/project/CVDP/CVDPDEV/Workflow/properties/java/vendorFordTrialReports.properties
+		--> Picked up JAVA_TOOL_OPTIONS: -Xmx1024m
+		--> Picked up JAVA_TOOL_OPTIONS: -Xmx1024m
+		--> connectType=SFTP
+		--> /testing/project/CVDP/CVDPDEV/Workflow/properties/java/vendorIntrepidWivi.properties
+		--> Picked up JAVA_TOOL_OPTIONS: -Xmx1024m
+		--> connectType=SFTP
+
 'HDFS MOVE COMMAND FOR FILES MORE THAN X DAYS'
 
 	hdfs dfs -ls /project/CVDP/CVDPDEV/Archive/Completed/  | awk '{ if ((($6 < "'"2020-05-05"'" ))) system("hdfs dfs -mv " $8 " " "/project/CVDP/CVDPDEV/Staging/Project/Input")}'
@@ -372,7 +373,45 @@ mr-jobhistory-daemon.sh start historyserver
 	And the highlighted date is the condition which results in moving only the files which are older than 05th May.
 
 	Execute commands with awk system function - here we are moving the files from /path to /path2 by altering the file name with substr fn
-	hdfs dfs -stat "%n" /path/ | awk '{ system("hdfs dfs -mv /path/" $1 " " "/path2/" substr($1,6) ) }'
+	> hdfs dfs -stat "%n" /path/ | awk '{ system("hdfs dfs -mv /path/" $1 " " "/path2/" substr($1,6) ) }'
+
+	Move 10 files from hdfs path 1 to path 2
+	> hdfs dfs -stat "%n" /path/\* | head -10 | xargs -i  hdfs dfs -mv /path/{} /path2/ 
+
+
+'HDFS Total file size based on a particular date'
+	hdfs dfs -ls -R /project/CVDP/CVDPDEV/Warehouse/Secure/TCU2G/ | grep -E '^-.*2020-07-05' | awk '{
+	nkey = $6
+	if(key != nkey && key != "") {
+	printf("%s\t%d\t%d\n", key, freq, size)
+	freq = 1;
+	size = $5
+	} else {freq++
+	size += $5
+	}
+	key = nkey
+	}
+	END {printf("%s\t%d\t%f%s\n", key, freq, size/(1024*1024*1024) ," GB")
+	}'
+	>>Picked up JAVA_TOOL_OPTIONS: -Xmx1024m 
+	>>2020-07-05      182     0.557883 GB
+
+'Find list of empty files in a directory'
+	hdfs dfs -ls -R /project/CVDP/CVDPDEV/Archive/VHA/Completed/ | awk '$1 !~ /^d/ && $5 == "0" { print $8 }' <-- !~  means not equal to ( equals to ^d condition gives empty folders list)
+
+'Find total number of empty folders present in the directorty'
+	hdfs dfs -du -s -h /project/CVDP/CVDPDEV/Archive/VHA/Completed/\* | awk '$1 =="0" && $2 == "0" { print $3 }' | wc -l
+
+'To list the zero sized files and directories:'
+
+	hdfs dfs -ls -R /project/CVDP/CVDPDEV/Archive/VHA/Completed/ | awk -F " "  '{print $8}' | head -20 | xargs -i  hdfs dfs -du -s -h {} | awk '$1 =="0" && $2 == "0" { print $3 }' 
+
+'To directly delete the zero sized files and directories:'
+
+	hdfs dfs -ls -R /project/CVDP/CVDPDEV/Archive/VHA/Completed/ | awk -F " "  '{print $8}' | head -20 | xargs -i  hdfs dfs -du -s -h {} | awk '{ if ((($1 == "'"0"'"))) system("hdfs dfs -rm -r " $3)}'
+
+
+
 
 'Operations on Variable:'  --> https://www.tldp.org/LDP/Bash-Beginners-Guide/html/sect_10_03.html
 
@@ -1249,6 +1288,11 @@ functions:
 'trait'
 :+
 
+
+`PYTHON`:
+========
+	python -m tabnanny yourfile.py <-- to check intendation errors in python code
+
 ===============================================================
 `SPARK`:
 ========
@@ -1292,13 +1336,36 @@ functions:
 	spark.executor.memory=256m
 	spark.yarn.jars=hdfs://master:54310/user/spark/share/lib/*.jar      ---- */
 
+`Spark - CONF parameters`
+========================
+	spark.locality.wait - Max number like 50 for Large data sets, bcoz cost of having to transfer large amounts of data across the network can be quite expensive.
+						- Min like 0 or 3 For small data sets, the cost of shuffling the data around the cluster is relatively inexpensive 
+
+	--> https://support.datastax.com/hc/en-us/articles/208237373-FAQ-When-is-it-a-good-idea-to-set-Spark-locality-wait-to-zero-
+
+
+
+
+
+
 spark-shell --verbose --master yarn --driver-memory 512m --num-executors 1 --executor-cores 2 --executor-memory 512m
+
+`Hive warehouse Connector` 
+		https://community.cloudera.com/t5/Community-Articles/Integrating-Apache-Hive-with-Apache-Spark-Hive-Warehouse/ta-p/249035
+		https://docs.cloudera.com/HDPDocuments/HDP3/HDP-3.1.5/integrating-hive/content/hive-read-write-operations.html
+		https://blog.cloudera.com/hive-warehouse-connector-use-cases/
+		http://docs.hortonworks.com.s3.amazonaws.com/HDPDocuments/HDP3/HDP-3.0.0/integrating-hive/content/hive_hivewarehousesession_api_operations.html
+		https://community.cloudera.com/t5/Support-Questions/HDP-3-1-Spark-2-3-2-hive-table-quot-default-table1-quot-show/td-p/240071
+
 
 'Error while starting spark-shell':
 	ERROR TransportClient:233 - Failed to send RPC
 	refer --> https://issues.apache.org/jira/browse/YARN-4714 
 	'Solution':
 		spark-shell --master yarn --conf "spark.executor.extraJavaOptions = -XX:ReservedCodeCacheSize=100M -XX:MaxMetaspaceSize=256m -XX:CompressedClassSpaceSize=256m" driver-memory 512m --num-executors 1 --executor-cores 2 --executor-memory 512m --conf "spark.yarn.jars=hdfs://master:54310/user/spark/share/lib/*.jar" --conf "spark.yarn.maxAppAttempts=1"
+
+
+things to consider while write.toFile case --> https://blog.scottlogic.com/2018/03/22/apache-spark-performance.html
 
 spark -version -> to find the version of the spark
 
@@ -1313,8 +1380,27 @@ spark -version -> to find the version of the spark
 	sqlc: org.apache.spark.sql.SQLContext = org.apache.spark.sql.SQLContext@614c7175
 
 //To list the environment details of spark which is already running 
-	sc.getConf.getAll
-	sc.getConf.getAll.foreach(println)
+	
+'spark scala'
+	sc.getConf.getAll <-- list all together
+	sc.getConf.getAll.foreach(println) <-- prints line by line
+	spark.sparkContext.getConf.get("spark.sql.files.maxPartitionBytes") <--get selected conf
+'pyspark'
+	spark.sparkContext.getConf().getAll() <-- list all together
+	for item in sorted(sc._conf.getAll()): print(item) <-- print line by line
+	spark._conf.get("spark.app.name") <--get selected conf
+
+ //spark-shell enables Hive support by default
+ 	scala> sqlc.getAllConfs.contains("spark.sql.catalogImplementation")
+ 	res3: Boolean = true
+
+ // Set hive and HDFS proprties in spark
+ 	In a Spark cluster running on YARN, these configuration files are set cluster-wide, and cannot safely be changed by the application.
+
+	The better choice is to use spark hadoop properties in the form of spark.hadoop.*, and use spark hive properties in the form of spark.hive.*. 
+	For example, adding configuration “spark.hadoop.abc.def=xyz” represents adding hadoop property “abc.def=xyz”,
+	 and adding configuration “spark.hive.abc=xyz” represents adding hive property “hive.abc=xyz”. 
+
 =====
 `RDD (resilient distributed datasets)`
 ===== RDD is an immutable collection of distributed objects/elements partitioned across the nodes of clusters and operated on in parallel. Features are immutable, inmemory computation, lazy evaluations, Fault tolerance, Partitioning. 
@@ -1453,6 +1539,9 @@ spark -version -> to find the version of the spark
 	'unpersist()' - Spark monitor the cache of each node automatically and drop out the old data partition in the LRU (least recently used) fashion.
 					We can also remove the cache manually using RDD.unpersist() method.
 
+	'to purge all cached objects' - spark.catalog.clearCache()
+
+
 	#Refer ( https://data-flair.training/blogs/apache-spark-rdd-persistence-caching/ ) 
 
 ==========
@@ -1572,6 +1661,7 @@ spark -version -> to find the version of the spark
     
     	>> scala> someRDD.getNumPartitions()
     	>> res1: 30
+
 
 	'CSV format'
 		>> import org.apache.spark.sql.types._
@@ -1700,6 +1790,20 @@ spark -version -> to find the version of the spark
 			>> val myRDD = sc.textFile("s3n://myBucket/MyFilePattern")
 			>> myRDD.count
 
+ 	'Compute size of Spark dataframe'
+
+	1.  Shows how many partitions in a df and its no of records
+
+		> import org.apache.spark.sql.functions._ 
+	 	> df.withColumn("partitionId", spark_partition_id()).groupBy("partitionId").count().show()
+
+ 	2.  df.groupBy(spark_partition_id()).count().show -- same like above method
+
+ 	3. shows how many partitions in df
+
+ 		> df.select(spark_partition_id()).distinct().count()
+
+ 	-->https://stackoverflow.com/questions/49492463/compute-size-of-spark-dataframe-sizeestimator-gives-unexpected-results
 
 `Working with Structured Operations`
 ....
