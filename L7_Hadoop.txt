@@ -6,7 +6,6 @@
 
 '-stat' command will return filenames only 
 	hdfs dfs -stat "%n" my/path/a*		<-- without "%n" shows only the date and time of the file creation 
-
 'list the namenode and datanodes of a cluster from any node'
 	>hdfs dfsadmin -report
 	>hdfs getconf -confKey fs.defaultFS
@@ -96,7 +95,9 @@
 	
 	awk -F ',' '{print NR,NF,$0}' file_test.txt <-- prints line number, count of columns, entire line ‘print $0’ means print the current line) 
 	awk -F ',' 'NF != 31' file_test.txt <-- prints entire column matching the condition (in place od NF we can also specify $1 or $7 etc)
-
+	
+	hdfs dfs -ls /project/CVDP/CVDPDEV/Archive/*/Completed | awk -F " " '{print $8}' | awk -F "/" '{print $6}' | uniq | awk NF
+	
 	Reference for basi awk <--- https://www.gnu.org/software/gawk/manual/html_node/Very-Simple.html
 
 'list all the file names match with a word'
@@ -159,7 +160,7 @@
 	hdfs dfs -ls -R /project/CVDP/CVDPDEV/Archive/VHA/Completed/ | awk -F " "  '{print $8}' | head -20 | xargs -i  hdfs dfs -du -s -h {} | awk '{ if ((($1 == "'"0"'"))) system("hdfs dfs -rm -r " $3)}'
 
 
-
+oozie jobs -jobtype wf -len 100000 -filter "status=KILLED;startcreatedtime=-1d" | grep -i CvdpFordPassAppreciation_
 
 'Operations on Variable:'  --> https://www.tldp.org/LDP/Bash-Beginners-Guide/html/sect_10_03.html
 
@@ -172,7 +173,7 @@ The maximum number of attempts to run a task is controlled by the mapreduce.map.
 ================================================================
 `SQOOP`
 
-sqoop list-databases --connect jdbc:db2://base:50000/SAMPLE --username mling --password Sanjeevin@1
+sqoop list-databases --connect jdbc:db2://base:50000/SAMPLE --username mling --password ppp@1
 sqoop list-tables --connect jdbc:db2://base:50000/SAMPLE --username mling -P
 
 sqoop import --connect jdbc:db2://base:50000/SAMPLE --username MLING -P -table EMPLOYEE -m 1 --delete-target-dir;
@@ -183,22 +184,22 @@ sqoop import --connect jdbc:db2://base:50000/SAMPLE --username MLING -P -table E
 
 sqoop import --connect jdbc:db2://base:50000/SAMPLE --username MLING -P -table EMPLOYEE -m 1 --where "job != 'MANAGER'" --append --target-dir EMP_m3 ;
 
-sqoop import  --connect jdbc:db2://192.168.1.6:50000/SAMPLE --username MLING --password Sanjeevin@1 -table EMP_PHOTO -m 1 --target-dir EMP_PHOTO --delete-target-dir --as-avrodatafile;
+sqoop import  --connect jdbc:db2://192.168.1.6:50000/SAMPLE --username MLING --password ppp@1 -table EMP_PHOTO -m 1 --target-dir EMP_PHOTO --delete-target-dir --as-avrodatafile;
 
-sqoop export --connect jdbc:db2://192.168.1.6:50000/SAMPLE --username MLING --password Sanjeevin@1 -table EMP_PHOTO_HDFS -m 1 --export-dir /user/hduser/EMP_PHOTO/ --map-column-java "PICTURE=String" --fields-terminated-by ',' --lines-terminated-by '\n';
+sqoop export --connect jdbc:db2://192.168.1.6:50000/SAMPLE --username MLING --password ppp@1 -table EMP_PHOTO_HDFS -m 1 --export-dir /user/hduser/EMP_PHOTO/ --map-column-java "PICTURE=String" --fields-terminated-by ',' --lines-terminated-by '\n';
 
-sqoop export --connect jdbc:db2://192.168.1.6:50000/SAMPLE --username MLING --password Sanjeevin@1 -table EMP_PHOTO_HDFS -m 1 --export-dir /user/hduser/EMP_PHOTO/ ;
+sqoop export --connect jdbc:db2://192.168.1.6:50000/SAMPLE --username MLING --password ppp@1 -table EMP_PHOTO_HDFS -m 1 --export-dir /user/hduser/EMP_PHOTO/ ;
 
 https://docs.hortonworks.com/HDPDocuments/HDP2/HDP-2.3.0/bk_dataintegration/content/ch_using-sqoop.html
 
-sqoop import-all-tables --connect jdbc:db2://base:50000/SAMPLE --username mling --password Sanjeevin@1 --warehouse-dir '/user/hduser/alltables' -m 1
+sqoop import-all-tables --connect jdbc:db2://base:50000/SAMPLE --username mling --password ppp@1 --warehouse-dir '/user/hduser/alltables' -m 1
 
-sqoop eval --connect jdbc:db2://base:50000/SAMPLE --username mling --password Sanjeevin@1 --query "select * from emp_sq where sex='M'" 
+sqoop eval --connect jdbc:db2://base:50000/SAMPLE --username mling --password ppp@1 --query "select * from emp_sq where sex='M'" 
 
 --delete-dir and --apend are mutually exclusive
 
 --split-by need to be used when there is --num-mappers (by def 4) is more than 1 and  no primary key is available on the target table 
-the column used in splitby should be numeric(varchar also possible but with enabling special flag -Dorg.apache.sqoop.splitter.allow_text_filter=true), or sequence or incremented values. (high no of diif values)
+the column used in splitby should be numeric(varchar also possible but with enabling special flag -Dorg.apache.sqoop.splitter.allow_text_filter=true), or sequence or incremented values. (high no of diff values)
 or enable --autoreset-to-one-mapper -- this helps when there is no primary key on the target table it resets the num mappers to one. 
 
 
@@ -627,7 +628,6 @@ Applying a lateral view explode on the above table will expand the both person a
 	24 rows selected (0.365 seconds)
 
 --------------------------------------------------------------------------------------------------------------------
---------------------------------------------------------------------------------------------------------------------
 'POSEXPLODE' -> (array only)
 
 	CREATE TABLE testpos( person string, phones array<int>, country array<string> ) row format delimited fields terminated by ',' STORED AS TEXTfile  LOCATION 'path/hdfs/testpos';
@@ -682,7 +682,6 @@ Applying a lateral view explode on the above table will expand the both person a
 	+------------+------------+-----------+--------------+-----------+
 
 --------------------------------------------------------------------------------------------------------------------
---------------------------------------------------------------------------------------------------------------------
 'INLINE (array of structs)'
 	Explodes an array of structs to multiple rows. Returns a row-set with N columns (N = number of top level elements in the struct).
 
@@ -716,7 +715,6 @@ Use Inline function to flatten the structure:
 	| 1   | pras  | it            | 2   | pras2  | 3       | pras3     | it3               |
 	+-----+-------+---------------+-----+--------+---------+-----------+-------------------+
 
---------------------------------------------------------------------------------------------------------------------
 --------------------------------------------------------------------------------------------------------------------
 'JSON_TUPLE'
 	It takes a set of names (keys) and a JSON string, and returns a tuple of values using one function. This is much more efficient than calling GET_JSON_OBJECT to retrieve more than one key from a single JSON string.
@@ -752,6 +750,28 @@ select a.cvdpx3_sha_k, get_json_object(a.cvdpx3_raw_x, '$.identifier') as f1 , g
 	+-------------------------------------------------------------------+---------+---------+--+
 	2 rows selected (0.135 seconds)
 
+-----------------------------------------------------------------------------------------------
+Complex Types null inserts:
+
+	To insert a null values in complex types such as nested struct<array<struct columns. 
+	
+	cvdpdk_atr_id_code_value struct<attributes:array<struct<atr_id:bigint,
+														atr_code:varchar(20),
+														value:string>>>
+														
+	Direct setting of NULL will result in below error:
+	FAILED: SemanticException [Error 10044]: Line 1:12 Cannot insert into target table because column number/types are different 'tablename': 
+			Cannot convert column 73 from void to struct<ATTRIBUTES:array<struct<ATR_ID:bigint,ATR_CODE:varchar(20),VALUE:string>>>. (state=42000,code=10044)
+	
+	To Fix this use: 
+	
+	insert into select named_struct('attributes',
+									array(named_struct('ATR_ID', cast(null as bigint),
+														'ATR_CODE', cast(null as varchar(20)),
+														'VALUE',cast(null as string)))) as cvdpdk_atr_id_code_value from source_table;
+
+
+-----------------------------------------------------------------------------------------------
 ====================
 `SET PARAMETERS - HIVE`
 
@@ -834,6 +854,29 @@ select a.cvdpx3_sha_k, get_json_object(a.cvdpx3_raw_x, '$.identifier') as f1 , g
 
 	hive.support.quoted.identifiers=NONE; - used to enable this type of query -- select `(r_num)?+.+` from (select row_number() over (partition by cust.cvdp72_cust_d_2) as r_num from table where v1.r_num=1;
 
+	set hive.mapred.mode=nonstrict;
+	set hive.execution.engine=tez;
+	set hive.support.concurrency=true;
+	set hive.exec.dynamic.partition=true;
+	set hive.enforce.bucketing=true;
+	set hive.exec.dynamic.partition.mode=nonstrict;
+	set mapreduce.map.java.opts=Xmx12144m;
+	set hive.exec.max.dynamic.partitions=1000000;
+	set hive.exec.max.dynamic.partitions.pernode=1000000;
+	set hive.auto.convert.join=true;
+	set hive.optimize.sort.dynamic.partition=true;
+	set tez.grouping.min.size=544874240;
+	set tez.grouping.max.size=644874240;
+
+	set hive.tez.container.size=32786;
+	set tez.am.resource.memory.mb=32786;
+	set hive.exec.orc.split.strategy=BI;
+	set hive.orc.cache.use.soft.references=true;
+	set hive.exec.parallel=true;
+
+	set hive.exec.compress.output=true;
+	set hive.cbo.enable=true;
+	set hive.compute.query.using.stats=true;
 
 
 
@@ -895,6 +938,28 @@ functions:
 --------
 	python -m tabnanny yourfile.py <-- to check intendation errors in python code
 
+	'try' and 'exception' --> https://www.programiz.com/python-programming/exception-handling
+
+	`ANACONDA`
+		conda create --name env_name
+		conda install gpudb=7.0.16.0
+		conda list
+		
+		if Anaconda path involes  both .local sitepackages and.conda site-packages, python loads the one in .local.
+		>>sys.path
+		  ['/u/cvdpqap/.local/lib/python3.6/site-packages', '/u/cvdpqap/.conda/envs/gpudb_py/lib/python3.6/site-packages']
+		
+		to change this behaviour, before activating the env enter export PYTHONNOUSERSITE=0, to remove the .local/site-packages from sys.path.
+		1. export PYTHONNOUSERSITE=True before the conda activate call successfully isolated the conda environment from global/user site packages for me.
+
+		2. On the other hand, entering export PYTHONNOUSERSITE=0 allows the conda environment to be reintroduced to the user site packages.
+	
+		or 
+		
+		1. export PYTHONPATH="/u/cvdpqap/.conda/envs/gpudb_py/lib/python3.6/site-packages:$PYTHONPATH"
+			in this though the sys.path shows .local/site-packages it will take the one is .conda/site-packages
+		
+		
 ===============================================================
 `SPARK`:
 --------
@@ -931,6 +996,12 @@ spark -version -> to find the version of the spark
 	scala> val sqlc = new org.apache.spark.sql.SQLContext(sc)
 	sqlc: org.apache.spark.sql.SQLContext = org.apache.spark.sql.SQLContext@614c7175
 
+// v2
+	from pyspark.context import SparkContext
+	from pyspark.sql.session import SparkSession
+	sc = SparkContext.getOrCreate()
+	spark = SparkSession(sc)
+	
 //To list the environment details of spark which is already running 
 	
 'spark scala'
@@ -940,6 +1011,7 @@ spark -version -> to find the version of the spark
 'pyspark'
 	spark.sparkContext.getConf().getAll() <-- list all together
 	for item in sorted(sc._conf.getAll()): print(item) <-- print line by line
+	for item in sorted(spark.sparkContext.getConf().getAll()): print(item)
 	spark._conf.get("spark.app.name") <--get selected conf
 
  //spark-shell enables Hive support by default
@@ -952,6 +1024,31 @@ spark -version -> to find the version of the spark
 	The better choice is to use spark hadoop properties in the form of spark.hadoop.*, and use spark hive properties in the form of spark.hive.*. 
 	For example, adding configuration “spark.hadoop.abc.def=xyz” represents adding hadoop property “abc.def=xyz”,
 	 and adding configuration “spark.hive.abc=xyz” represents adding hive property “hive.abc=xyz”. 
+
+//check if a file is in hdfs or not:
+	fs = sc._jvm.org.apache.hadoop.fs.FileSystem.get(sc._jsc.hadoopConfiguration())
+	fs.exists(sc._jvm.org.apache.hadoop.fs.Path("/tmp/recordsWithFilename.csv/_SUCCESS"))
+	
+	fileopen = Popen(f'hdfs dfs -stat "%n" {input_path}/*',shell=True, stdout = PIPE, universal_newlines=True).communicate()
+	if fileopen[0] != '': --> true means files present inside the folder
+		filename = fileopen[0].strip('\n')
+	
+	//listing a directory
+		URI           = sc._gateway.jvm.java.net.URI
+		Path          = sc._gateway.jvm.org.apache.hadoop.fs.Path
+		FileSystem    = sc._gateway.jvm.org.apache.hadoop.fs.FileSystem
+		Configuration = sc._gateway.jvm.org.apache.hadoop.conf.Configuration
+		fs = FileSystem.get(URI("hdfs://hdd3cluster:8020"), Configuration())
+		status = fs.listStatus(Path('/tmp/recordsWithFilename.csv/'))
+		for fileStatus in status:
+			print(fileStatus.getPath())
+			
+	another way:
+		hadoop = sc._jvm.org.apache.hadoop
+		fs = hadoop.fs.FileSystem
+		conf = hadoop.conf.Configuration()
+		path = hadoop.fs.Path('/tmp/recordsWithFilename.csv/')
+		[str(f.getPath()) for f in fs.get(conf).listStatus(path)]
 
 =====
 `RDD (resilient distributed datasets)`
@@ -1382,8 +1479,56 @@ spark -version -> to find the version of the spark
 	counts.coalesce(1).write.csv("/home/packt/Downloads/myresults3-" + currentdate + ".csv")
 
 
+'read/write a ACID enabled table from spark'
+	pyspark/spark-submit --jars /opt/cloudera/parcels/CDH/lib/hive_warehouse_connector/hive-warehouse-connector-assembly*.jar --py-files /opt/cloudera/parcels/CDH/lib/hive_warehouse_connector/pyspark_hwc*.zip
+	#imports
+	from pyspark.sql import SparkSession
+	from pyspark_llap import HiveWarehouseSession
+	spark = SparkSession.builder.enableHiveSupport().appName("hwc-app").getOrCreate()
+	hwc = HiveWarehouseSession.session(spark).build()
+
+	df = spark.read.format("csv").option('delimiter','~').load('/tmp/spark_test/')
+	hwc.sql("select * from cvdp.NCVDPJC_SAVE_VEH_PII_HTE_SPARKTEST").show(1) #to read from acid table
+	
+	#df.createOrReplaceTempView("mytempTable") --> tried creating a temp table and writing it to acid table using hwl.sql(insert) like below but temptable not visible to hwc.sql
+	#hwc.sql("insert into cvdp.NCVDPJC_SAVE_VEH_PII_HTE_SPARKTEST select * from mytempTable")
+	
+	Work around:
+	df.write.format(HiveWarehouseSession.HIVE_WAREHOUSE_CONNECTOR).option("table", "cvdp.NCVDPJC_SAVE_VEH_PII_HTE_SPARKTEST").save()
+		the above comand failed as the table already exist. dropping the existing table clears the issue
+	
+	df2.write.mode("overwrite").format(HiveWarehouseSession.HIVE_WAREHOUSE_CONNECTOR).option("table", "cvdp.NCVDPJC_SAVE_VEH_PII_HTE_SPARKTEST").save() # Hive column: cvdpjc_vin_hash_d cannot be found at same index: 0 in dataframe. Found _c0. Aborting as this may lead to loading of incorrect data. 
+	Adding schema while loading df from csv helps in resolving the above error. (df2 = spark.read.format("csv").option('delimiter','~').schema(schema).load('/tmp/spark_test/000129_0'))
+	df2.write.format(HiveWarehouseSession.HIVE_WAREHOUSE_CONNECTOR).mode("overwrite").saveAsTable("cvdp.NCVDPJC_SAVE_VEH_PII_HTE_SPARKTEST") #Spark has no access to table `cvdp`.`ncvdpjc_save_veh_pii_hte_sparktest` This table may be a Hive-managed ACID table, or require some other capability that Spark\ncurrently does not implement;
+	df2.write.save('/project/CVDP/CVDPDEV/Warehouse/Secure/VIN/ncvdpjc_save_veh_pii_hte_sparkTest',format='orc',mode='overwrite') #working but the table should be non-partitioned
 
 
+set hive.execution.engine=tez;
+set hive.mapred.mode=nonstrict;
+set hive.vectorized.execution.enabled=false;
+set hive.exec.dynamic.partition=true;
+set hive.exec.dynamic.partition.mode=nonstrict;
+set hive.exec.max.dynamic.partitions.pernode=1000000;
+set hive.optimize.sort.dynamic.partition=true;
+set hive.exec.reducers.bytes.per.reducer=1048576;
+set hive.exec.parallel=true;
+set hive.tez.auto.reducer.parallelism=true;
+set hive.stats.autogather=false;
+set mapreduce.map.memory.mb=8192;
+set mapreduce.map.java.opts=-Xmx6144m;
+set tez.am.resource.memory.mb=32768;
+set hive.tez.container.size=32768;
+set hive.exec.orc.split.strategy=BI;
+set hive.compute.splits.in.am=false;
+set tez.grouping.min-size=544874240;
+set tez.grouping.max-size=644874240;
+set mapreduce.input.fileinputformat.split.minsize=544874240;
+set mapreduce.input.fileinputformat.split.maxsize=644874240;
+set hive.vectorized.execution.enabled=false;
+set hive.vectorized.execution.reduce.enabled=false;
+set tez.runtime.shuffle.ssl.enable=false;
+set hive.orc.cache.use.soft.references=true;
+set hive.auto.convert.join=false;
 
 =============================================================================
 https://spoddutur.github.io/spark-notes/distribution_of_executors_cores_and_memory_for_spark_application.html
@@ -1397,4 +1542,16 @@ https://medium.com/@durgaswaroop/a-practical-introduction-to-kafka-storage-inter
 
 http://apachesparkbook.blogspot.com/search/label/a54%7C%20collectAsMap%28%29 --> mini basics
 =============================================================================
+Expect script for auto sudo:
+---------------------------
+#!/usr/bin/expect 
 
+set user [lindex $argv 0] 
+spawn bash
+expect "*hpchdd2e*"
+send "sudo su - ${user}\r"
+expect "?sudo? password for lm8:"
+send "Lo0k@me@1\r"
+set prompt_re {\$ >}
+expect -re $prompt_re
+interact
